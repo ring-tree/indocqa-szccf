@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# 环境变量与密钥（禁止提交真实 Key）
+.env
+.env.local
+
+# 实验产物（评测集与报告保留，中间结果忽略）
+eval/results/cache/
+eval/results/raw/
+*.log
+
+# 内核同步副本的运行时生成物
+server/data/chroma/
+server/data/cache/
+models/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
