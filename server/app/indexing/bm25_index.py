@@ -62,5 +62,16 @@ class BM25Index:
         self.path.write_text(json.dumps(self.docs, ensure_ascii=False), encoding="utf-8")
 
 
+_bm25_cache: dict[str, BM25Index] = {}
+
+
 def get_bm25(settings) -> BM25Index:
-    return BM25Index(pathlib.Path(settings.chroma_dir) / "bm25_docs.json")
+    """进程级单例：BM25 实例的构建需要对全量块分词（秒级），必须跨查询复用。
+
+    实例内部在文档集变更时自动重建，同一实例的缓存即失效逻辑。
+    """
+    path = pathlib.Path(settings.chroma_dir) / "bm25_docs.json"
+    key = str(path)
+    if key not in _bm25_cache:
+        _bm25_cache[key] = BM25Index(path)
+    return _bm25_cache[key]

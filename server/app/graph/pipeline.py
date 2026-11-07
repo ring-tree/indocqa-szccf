@@ -116,7 +116,7 @@ def _heuristic_level(hits: list[Hit], settings) -> str:
 def _citation_coverage(answer: str, hits: list[Hit]) -> tuple[float, bool]:
     cited = {int(n) for n in _CITED.findall(answer)}
     valid = {n for n in cited if 1 <= n <= len(hits)}
-    coverage = len(valid) / min(3, len(hits)) if hits else 0.0
+    coverage = min(1.0, len(valid) / min(3, len(hits))) if hits else 0.0
     return coverage, bool(valid)
 
 

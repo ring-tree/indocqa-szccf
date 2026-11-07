@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     llm_backup_base_url: str = ""
     llm_backup_api_key: str = ""
     llm_backup_model: str = ""
+    # 思考型模型（qwen3 系）关闭思考阶段以降低首 token 延迟；仅注入主供应商请求
+    llm_disable_thinking: bool = True
 
     embed_model: str = "BAAI/bge-m3"
     # auto=优先 Ollama（运行中且模型存在时），否则回退 Chroma 内置 MiniLM

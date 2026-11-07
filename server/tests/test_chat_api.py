@@ -81,10 +81,20 @@ def test_kb_table_question_hits_serialized_table(client):
     assert "4000" in _tokens(events)
 
 
-def test_direct_without_gateway_returns_42901(client):
-    r = client.post("/api/chat", json={"message": "你好", "mode": "direct"})
-    assert r.status_code == 502
-    assert r.json()["error"]["code"] == 42901
+def test_direct_without_gateway_returns_42901(client, monkeypatch):
+    # 环境变量覆盖 .env 中的网关配置（含备用供应商），模拟完全未配置场景
+    for var in (
+        "INDOCQA_LLM_BASE_URL", "INDOCQA_LLM_API_KEY", "INDOCQA_LLM_MODEL",
+        "INDOCQA_LLM_BACKUP_BASE_URL", "INDOCQA_LLM_BACKUP_API_KEY", "INDOCQA_LLM_BACKUP_MODEL",
+    ):
+        monkeypatch.setenv(var, "")
+    get_settings.cache_clear()
+    try:
+        r = client.post("/api/chat", json={"message": "你好", "mode": "direct"})
+        assert r.status_code == 502
+        assert r.json()["error"]["code"] == 42901
+    finally:
+        get_settings.cache_clear()
 
 
 def test_kb_empty_returns_40401(tmp_path, monkeypatch):

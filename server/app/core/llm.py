@@ -17,12 +17,15 @@ _SWITCHABLE_STATUS = {429, 500, 502, 503, 504}
 class LLMGateway:
     def __init__(self, settings: Settings):
         self.providers: list[dict] = []
-        for base, key, model in (
-            (settings.llm_base_url, settings.llm_api_key, settings.llm_model),
-            (settings.llm_backup_base_url, settings.llm_backup_api_key, settings.llm_backup_model),
+        self.disable_thinking = settings.llm_disable_thinking
+        for base, key, model, primary in (
+            (settings.llm_base_url, settings.llm_api_key, settings.llm_model, True),
+            (settings.llm_backup_base_url, settings.llm_backup_api_key, settings.llm_backup_model, False),
         ):
             if base and key and model:
-                self.providers.append({"base": base.rstrip("/"), "key": key, "model": model})
+                self.providers.append(
+                    {"base": base.rstrip("/"), "key": key, "model": model, "primary": primary}
+                )
 
     @property
     def configured(self) -> bool:
@@ -32,13 +35,17 @@ class LLMGateway:
         errors: list[str] = []
         for provider in self.providers:
             produced = False
+            body: dict = {"model": provider["model"], "messages": messages, "stream": True}
+            if provider["primary"] and self.disable_thinking:
+                # 思考型模型关闭思考，降低首 token 延迟；备用供应商不注入该参数
+                body["enable_thinking"] = False
             try:
                 async with httpx.AsyncClient(timeout=90) as client:
                     async with client.stream(
                         "POST",
                         f"{provider['base']}/chat/completions",
                         headers={"Authorization": f"Bearer {provider['key']}"},
-                        json={"model": provider["model"], "messages": messages, "stream": True},
+                        json=body,
                     ) as resp:
                         if resp.status_code in _SWITCHABLE_STATUS:
                             raise httpx.HTTPStatusError(
@@ -54,12 +61,14 @@ class LLMGateway:
                             payload = line[5:].strip()
                             if payload == "[DONE]":
                                 return
-                            delta = (
-                                json.loads(payload)["choices"][0]["delta"].get("content")
-                            )
-                            if delta:
+                            choices = (json.loads(payload).get("choices") or [])
+                            if not choices:
+                                continue  # usage 统计帧等无增量内容
+                            delta = choices[0].get("delta") or {}
+                            content = delta.get("content")
+                            if content:
                                 produced = True
-                                yield delta
+                                yield content
                         return
             except UpstreamError:
                 raise
