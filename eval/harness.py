@@ -180,7 +180,19 @@ def _render_report(rows: dict, cases: list) -> str:
         "## 结论",
         "",
         *_conclusion(rows),
+        "",
+        "## 逐题明细（R=来源命中 / C=要点覆盖）",
+        "",
+        "| 题号 | B2 R/C | Ours R/C | 消融 R/C |",
+        "|---|---|---|---|",
     ]
+    for i in range(len(cases)):
+        qid = cases[i]["id"]
+        cells = []
+        for name, _ in CONFIGS:
+            s = rows[name][i]["score"]
+            cells.append(f"{'Y' if s['recall'] else 'N'}/{s['coverage']:.0%}")
+        lines.append(f"| {qid} | " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
 
