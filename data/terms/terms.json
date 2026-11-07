@@ -1,10 +1,14 @@
 {
- "builtAt": "2026-11-08T05:27:18",
+ "builtAt": "2026-11-08T01:33:56",
  "clusters": [
   [
    "ACFM",
    "实际立方英尺每分钟",
    "actual cubic feet per minute"
+  ],
+  [
+   "CAGI.",
+   "Running time: 13 minutes"
   ],
   [
    "CFM",
@@ -14,6 +18,10 @@
   [
    "E05",
    "E-05"
+  ],
+  [
+   "FRL",
+   "filter-regulator-lubricator"
   ],
   [
    "GRN",
@@ -32,11 +40,20 @@
    "国际标准化组织"
   ],
   [
+   "MAX",
+   "旋阀的指针将指向最大位置"
+  ],
+  [
+   "MIN",
+   "螺旋阀的指针指向最小位置"
+  ],
+  [
    "MTBF",
    "平均无故障时间",
    "无故障运行时间",
    "M.T.B.F.",
-   "Mean Time Between Failures"
+   "Mean Time Between Failures",
+   "Mean Time Between Failures，平均无故障时间"
   ],
   [
    "OSHA",
