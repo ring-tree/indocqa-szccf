@@ -19,7 +19,7 @@ FIXTURE = CORPUS / "fixture_术语混写_模拟维保手册.md"
 def tmp_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("INDOCQA_CHROMA_DIR", str(tmp_path / "chroma"))
     monkeypatch.setenv("INDOCQA_UPLOAD_DIR", str(tmp_path / "uploads"))
-    monkeypatch.setenv("INDOCQA_EMBED_BACKEND", "default")
+    monkeypatch.setenv("INDOCQA_EMBED_BACKEND", "local")
     get_settings.cache_clear()
     yield get_settings()
     get_settings.cache_clear()

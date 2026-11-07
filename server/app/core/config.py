@@ -33,8 +33,9 @@ class Settings(BaseSettings):
     llm_disable_thinking: bool = True
 
     embed_model: str = "BAAI/bge-m3"
-    # auto=优先 Ollama（运行中且模型存在时），否则回退 Chroma 内置 MiniLM
+    # auto=优先 Ollama（运行中且模型存在时），否则 local；可显式 local / ollama / minilm
     embed_backend: str = "auto"
+    embed_local_model: str = "BAAI/bge-small-zh-v1.5"
     ollama_base_url: str = "http://localhost:11434"
     ollama_embed_model: str = "bge-m3"
 

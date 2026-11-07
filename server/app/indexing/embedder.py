@@ -1,7 +1,12 @@
-"""嵌入后端：Ollama（REST，中英效果好）与 Chroma 内置 MiniLM（零依赖回退）双通道。
+"""嵌入层：三通道可选，策略由 INDOCQA_EMBED_BACKEND 控制（auto/local/ollama/minilm）。
 
-auto 策略每次解析时探测一次 Ollama（单次 HTTP 开销毫秒级），
-探测失败立即回退默认后端，保证离线/演示场景不中断。
+- local：fastembed 进程内常驻 ONNX，模型由 INDOCQA_EMBED_LOCAL_MODEL 指定，
+  权重缓存在本地后离线可用（Docker 自包含部署的默认通道）
+- ollama：本机 Ollama /api/embed，质量好但引入外部服务依赖与 HTTP 延迟
+- minilm：chromadb 内置兜底（其每次调用做模型下载校验，弱网下秒级延迟，仅保底）
+
+auto：Ollama 在运行且模型存在则用 ollama，否则 local。
+向量库集合名携带通道与模型标识，切换后需删除 data/chroma 重建。
 """
 
 import json
@@ -11,6 +16,10 @@ import urllib.request
 
 import httpx
 
+_probe_cache: dict[str, tuple[float, bool]] = {}
+_PROBE_TTL = 30.0
+_BATCH = 32
+
 
 class BaseEmbedder:
     backend_id: str
@@ -18,37 +27,37 @@ class BaseEmbedder:
     def embed(self, texts: list[str]) -> list[list[float]]:
         raise NotImplementedError
 
+    def query_embed(self, texts: list[str]) -> list[list[float]]:
+        """查询侧嵌入；e5 等模型需要与文档侧不同的前缀，其余模型与 embed 相同。"""
+        return self.embed(texts)
 
-class ChromaDefaultEmbedder(BaseEmbedder):
-    """零配置回退通道。
 
-    优先 fastembed 本地常驻 ONNX（bge-small-zh，中文友好、无网络抖动）；
-    未安装 fastembed 时退回 chromadb 内置 MiniLM（其每次调用会做模型下载校验，
-    弱网下查询嵌入可达数秒，仅作兜底）。
+class LocalEmbedder(BaseEmbedder):
+    """fastembed 进程内推理：模型一次加载常驻，查询毫秒级。
+
+    batch_size 限制单次推理批量——大模型（如 e5-large 24 层）在 CPU 上
+    大批量注意力缓冲可达数 GB，须按机器内存控制。
     """
 
-    def __init__(self):
-        try:
-            # 弱网环境默认走 HF 镜像下载，模型缓存后离线可用（不覆盖显式配置）
-            import os
+    def __init__(self, model_name: str, batch_size: int = 32, max_length: int = 512):
+        # 弱网环境默认走 HF 镜像下载，模型缓存后离线可用（不覆盖显式配置）
+        import os
 
-            os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-            from fastembed import TextEmbedding
+        os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+        from fastembed import TextEmbedding
 
-            self._model = TextEmbedding("BAAI/bge-small-zh-v1.5")
-            self.backend_id = "bge-small-zh"
-        except ImportError:
-            from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
-
-            self._model = None
-            self._fn = DefaultEmbeddingFunction()
-            self.backend_id = "minilm"
+        # max_length 统一 512：长上下文模型（如 jina 8192）按默认长度分配注意力缓冲，
+        # CPU 上可达数 GB 直接 OOM；切块上限本就 ≤900 字符，512 token 足够
+        self._model = TextEmbedding(model_name, batch_size=batch_size, max_length=max_length)
+        self.backend_id = "fe-" + model_name.split("/")[-1].replace(":", "-")
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        if self._model is not None:
-            return [[float(x) for x in vec] for vec in self._model.embed(texts)]
-        # chroma 1.x 要求纯 Python float，numpy 标量会被拒绝
-        return [[float(x) for x in vec] for vec in self._fn(texts)]
+        return [[float(x) for x in vec] for vec in self._model.embed(texts)]
+
+    def query_embed(self, texts: list[str]) -> list[list[float]]:
+        if hasattr(self._model, "query_embed"):
+            return [[float(x) for x in vec] for vec in self._model.query_embed(texts)]
+        return self.embed(texts)
 
 
 class OllamaEmbedder(BaseEmbedder):
@@ -58,20 +67,35 @@ class OllamaEmbedder(BaseEmbedder):
         self.backend_id = f"ollama-{model.replace(':', '-')}"
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        resp = httpx.post(
-            f"{self.base_url}/api/embed",
-            json={"model": self.model, "input": texts},
-            timeout=120,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if "embeddings" not in data:
-            raise RuntimeError(f"Ollama 嵌入响应缺少 embeddings 字段: {list(data)}")
-        return data["embeddings"]
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), _BATCH):
+            batch = texts[start : start + _BATCH]
+            resp = httpx.post(
+                f"{self.base_url}/api/embed",
+                json={"model": self.model, "input": batch},
+                timeout=300,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if "embeddings" not in data:
+                raise RuntimeError(f"Ollama 嵌入响应缺少 embeddings 字段: {list(data)}")
+            vectors.extend(data["embeddings"])
+        return vectors
 
 
-_probe_cache: dict[str, tuple[float, bool]] = {}
-_PROBE_TTL = 30.0
+class MiniLMEmbedder(BaseEmbedder):
+    """chromadb 内置兜底通道，仅在 fastembed 不可用时使用。"""
+
+    backend_id = "minilm"
+
+    def __init__(self):
+        from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+
+        self._fn = DefaultEmbeddingFunction()
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        # chroma 1.x 要求纯 Python float，numpy 标量会被拒绝
+        return [[float(x) for x in vec] for vec in self._fn(texts)]
 
 
 def _ollama_available(base_url: str, model: str) -> bool:
@@ -98,13 +122,17 @@ _embedder_cache: dict[tuple, BaseEmbedder] = {}
 def get_embedder(settings) -> BaseEmbedder:
     backend = settings.embed_backend
     if backend == "auto":
-        backend = "ollama" if _ollama_available(settings.ollama_base_url, settings.ollama_embed_model) else "default"
+        backend = "ollama" if _ollama_available(settings.ollama_base_url, settings.ollama_embed_model) else "local"
     if backend == "ollama":
         key = ("ollama", settings.ollama_base_url, settings.ollama_embed_model)
         if key not in _embedder_cache:
             _embedder_cache[key] = OllamaEmbedder(settings.ollama_base_url, settings.ollama_embed_model)
-    else:
-        key = ("default",)
+    elif backend == "minilm":
+        key = ("minilm",)
         if key not in _embedder_cache:
-            _embedder_cache[key] = ChromaDefaultEmbedder()
+            _embedder_cache[key] = MiniLMEmbedder()
+    else:
+        key = ("local", settings.embed_local_model)
+        if key not in _embedder_cache:
+            _embedder_cache[key] = LocalEmbedder(settings.embed_local_model)
     return _embedder_cache[key]

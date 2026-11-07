@@ -21,7 +21,10 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "server"))
-os.environ.setdefault("INDOCQA_EMBED_BACKEND", "default")
+
+# 嵌入后端可由外部指定（对比实验用）：EVAL_EMBED_BACKEND / EVAL_EMBED_LOCAL_MODEL
+EVAL_EMBED_BACKEND = os.environ.get("EVAL_EMBED_BACKEND", "local")
+EVAL_EMBED_LOCAL_MODEL = os.environ.get("EVAL_EMBED_LOCAL_MODEL")
 
 CONFIGS = [
     ("B2_fixed", {"INDOCQA_RETRIEVAL_MODE": "fixed"}),
@@ -34,10 +37,13 @@ EXCERPT_CHARS = 300
 def prepare() -> None:
     """建库（幂等）：语料入库 + 术语簇构建。"""
     from app.core.config import get_settings
+    from app.indexing.embedder import get_embedder
     from app.indexing.ingest import ingest_dir
     from app.retrieval.terms import build_clusters
 
     settings = get_settings()
+    embedder = get_embedder(settings)
+    print(f"嵌入后端: {embedder.backend_id}")
     results = ingest_dir(pathlib.Path(settings.corpus_dir), settings)
     print(f"入库 {len(results)} 份 / {sum(r['chunks'] for r in results)} 块")
     clusters = build_clusters(settings)
@@ -49,7 +55,9 @@ def apply_env(env: dict) -> None:
 
     for key in list(k for k in os.environ if k.startswith("INDOCQA_")):
         os.environ.pop(key, None)
-    os.environ["INDOCQA_EMBED_BACKEND"] = "default"
+    os.environ["INDOCQA_EMBED_BACKEND"] = EVAL_EMBED_BACKEND
+    if EVAL_EMBED_LOCAL_MODEL:
+        os.environ["INDOCQA_EMBED_LOCAL_MODEL"] = EVAL_EMBED_LOCAL_MODEL
     os.environ.update(env)
     get_settings.cache_clear()
 
@@ -88,6 +96,7 @@ def score(case: dict, run: dict) -> dict:
 
 async def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
+    apply_env({})  # 先统一嵌入后端环境，再建库——保证建库与查询使用同一模型
     prepare()
 
     dataset_path = ROOT / "eval" / "dataset.jsonl"

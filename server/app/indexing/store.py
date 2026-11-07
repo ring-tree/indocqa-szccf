@@ -76,7 +76,7 @@ def add_children(settings, children: list[ChildChunk], parents: list[ParentChunk
 def query(settings, query_text: str, top_k: int) -> list[dict]:
     """返回 [{"sim", "text", "doc_id", ...}]；相似度 = 1 - 余弦距离。"""
     embedder = get_embedder(settings)
-    emb = embedder.embed([query_text])[0]
+    emb = embedder.query_embed([query_text])[0]
     res = _collection(settings).query(
         query_embeddings=[emb], n_results=top_k, include=["documents", "metadatas", "distances"]
     )

@@ -21,7 +21,7 @@ SEED = pathlib.Path(__file__).resolve().parents[2] / "data" / "terms" / "seed.js
 def tmp_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("INDOCQA_CHROMA_DIR", str(tmp_path / "chroma"))
     monkeypatch.setenv("INDOCQA_UPLOAD_DIR", str(tmp_path / "uploads"))
-    monkeypatch.setenv("INDOCQA_EMBED_BACKEND", "default")
+    monkeypatch.setenv("INDOCQA_EMBED_BACKEND", "local")
     terms_dir = tmp_path / "terms"
     terms_dir.mkdir()
     shutil.copy(SEED, terms_dir / "seed.json")
