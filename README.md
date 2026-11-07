@@ -30,7 +30,28 @@ tools/    维护脚本
 
 ## 快速开始
 
-代码骨架正在初始化，本节将在首个可运行版本合入后补齐（环境要求 → .env 配置 → 建库与问答命令 → 复现实验步骤）。
+依赖：Python ≥ 3.11。检索服务内核已随仓库自带（`server/`，与语料、术语簇一同锁定提交，开箱可复现）。
+
+```bash
+# 1. 安装依赖
+cd server
+pip install -e .
+
+# 2. 建库（幂等，重复执行自动跳过）并构建术语簇
+python -m app.indexing.ingest ../data/corpus
+python -m app.retrieval.terms
+
+# 3. 复现基线对比实验（三配置 × 36 题，自动生成 docs/基线对比评测报告.md）
+cd ..
+python eval/harness.py
+
+# 4. 启动问答服务（可选，与评测共用同一知识库）
+cd server && uvicorn app.main:app --port 8000
+```
+
+单测：`cd server && python -m pytest -q`（30 个用例，覆盖解析分块、索引幂等、意图路由、多跳与 SSE 接口）。
+
+内核更新方式：`python tools/sync_kernel.py --src <检索问答服务源仓库>`（同步代码与语料后重跑建库）。
 
 ## 许可证
 
