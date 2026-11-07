@@ -104,4 +104,7 @@
    e5-large 用 8、jina 用 32）后均可稳定运行。容器化自包含部署可选用 e5-large（质量均衡、零外部依赖）。
 3. e5-large 语义能力强导致高分块集中于单一文档，跨文档多跳命中率（55%）反而低于 bge-m3（73%），
    该场景由检索层的单来源触发补查缓解。
-4. 切换后端须重建向量库（python -m app.indexing.ingest --rebuild，manifest 会校验后端一致性）。
+4. Qwen3-Embedding-0.6B-Q（fastembed 亦支持）实测判负：其 Q8 量化 ONNX 图在本机 onnxruntime
+   上存在与批量无关的恒定 ~4GB 中间张量分配（batch 8/4 两轮、289 条重复文本压测可过但真实语料建库
+   必失败），不纳入候选；如后续更换带 GPU 或更大内存的运行环境可复测。
+5. 切换后端须重建向量库（python -m app.indexing.ingest --rebuild，manifest 会校验后端一致性）。

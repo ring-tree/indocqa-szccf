@@ -12,7 +12,7 @@ SERVER_ROOT = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="INDOCQA_", env_file=".env", extra="ignore")
 
-    @field_validator("chroma_dir", "upload_dir", "corpus_dir", "terms_file", mode="after")
+    @field_validator("chroma_dir", "upload_dir", "corpus_dir", "terms_file", "embed_cache_dir", mode="after")
     @classmethod
     def _anchor_to_server(cls, value: str) -> str:
         """相对路径一律锚定到 server/ 目录，与运行时 cwd 无关。"""
@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     embed_backend: str = "auto"
     embed_local_model: str = "BAAI/bge-small-zh-v1.5"
     embed_local_batch: int = 32
+    # 本地模型权重随项目分发：仓库根 models/ 目录（打包时连同复制，程序只引用项目内路径）
+    embed_cache_dir: str = "../models"
     ollama_base_url: str = "http://localhost:11434"
     ollama_embed_model: str = "bge-m3"
 

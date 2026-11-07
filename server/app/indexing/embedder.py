@@ -39,14 +39,18 @@ class LocalEmbedder(BaseEmbedder):
     其默认 256 条批量在 CPU 上对大模型会触发数 GB 注意力缓冲分配失败）。
     """
 
-    def __init__(self, model_name: str, batch_size: int = 32):
-        # 弱网环境默认走 HF 镜像下载，模型缓存后离线可用（不覆盖显式配置）
+    def __init__(self, model_name: str, batch_size: int = 32, cache_dir: str | None = None):
+        # 模型权重固定存放在项目内 models/ 目录（随项目打包分发，不依赖项目外缓存）；
+        # 首次使用时经 HF 镜像下载，此后完全离线
         import os
+        import pathlib
 
         os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
         from fastembed import TextEmbedding
 
-        self._model = TextEmbedding(model_name)
+        if cache_dir:
+            pathlib.Path(cache_dir).mkdir(parents=True, exist_ok=True)
+        self._model = TextEmbedding(model_name, cache_dir=cache_dir)
         self._batch = batch_size
         self.backend_id = "fe-" + model_name.split("/")[-1].replace(":", "-")
 
@@ -137,7 +141,9 @@ def get_embedder(settings) -> BaseEmbedder:
         if key not in _embedder_cache:
             _embedder_cache[key] = MiniLMEmbedder()
     else:
-        key = ("local", settings.embed_local_model, settings.embed_local_batch)
+        key = ("local", settings.embed_local_model, settings.embed_local_batch, settings.embed_cache_dir)
         if key not in _embedder_cache:
-            _embedder_cache[key] = LocalEmbedder(settings.embed_local_model, settings.embed_local_batch)
+            _embedder_cache[key] = LocalEmbedder(
+                settings.embed_local_model, settings.embed_local_batch, settings.embed_cache_dir
+            )
     return _embedder_cache[key]
