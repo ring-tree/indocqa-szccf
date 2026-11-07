@@ -1,6 +1,5 @@
 """自适应检索阶段测试（T2.2 / T2.3 / T2.4 / T2.5）：意图、术语归一、路由、多跳。"""
 
-import json
 import pathlib
 import shutil
 
@@ -36,6 +35,7 @@ def tmp_settings(tmp_path, monkeypatch):
 
 # ---- 意图分类（T2.3）----
 
+
 def test_intent_classification_five_types():
     assert classify("MTBF 是什么意思").intent == "term"
     assert classify("LUB 更换的保养周期是多少小时？").intent == "param"
@@ -50,6 +50,7 @@ def test_intent_chitchat_and_general():
 
 
 # ---- 术语归一（T2.2）----
+
 
 def test_clusters_at_least_30_and_query_expansion(tmp_settings):
     clusters = load_clusters(tmp_settings)
@@ -73,6 +74,7 @@ def test_expansion_keeps_question_prefix(tmp_settings):
 
 
 # ---- 路由与多跳（T2.3 / T2.4，LangGraph 状态图）----
+
 
 @pytest.mark.asyncio
 async def test_adaptive_vs_fixed_plan_difference(tmp_settings):
@@ -119,13 +121,14 @@ async def test_term_expansion_ablation_switch(tmp_settings, monkeypatch):
     monkeypatch.setenv("INDOCQA_TERM_EXPANSION_ENABLED", "0")
     get_settings.cache_clear()
     off = await run_retrieval(q, "adaptive", tmp_settings)
-    first_hop = [s for s in off["trace"] if s["stage"] == "retrieve"][0]
+    first_hop = next(s for s in off["trace"] if s["stage"] == "retrieve")
     assert first_hop["expansions"] == [], "消融开关未生效"
-    on_first = [s for s in on["trace"] if s["stage"] == "retrieve"][0]
+    on_first = next(s for s in on["trace"] if s["stage"] == "retrieve")
     assert on_first["expansions"], "基线应存在术语扩展"
 
 
 # ---- 置信度三信号（T2.5，启发式部分）----
+
 
 def test_citation_coverage_downgrades():
     from app.graph.pipeline import _citation_coverage, _downgrade

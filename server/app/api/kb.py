@@ -46,6 +46,32 @@ async def ingest(file: UploadFile) -> dict:
     return {"data": result}
 
 
+@router.post("/preview")
+async def preview(file: UploadFile) -> dict:
+    """入库预检：解析演练与质量信号，不写入存储。"""
+    filename = pathlib.Path(file.filename or "unnamed").name
+    suffix = pathlib.Path(filename).suffix.lower()
+    if suffix not in ALLOWED_EXTS:
+        raise UnsupportedFormatError(
+            f"仅支持 {'/'.join(sorted(ALLOWED_EXTS))}，收到 {suffix or '无扩展名'}"
+        )
+    data = await file.read()
+    if len(data) > MAX_BYTES:
+        raise FileTooLargeError("文件超过 20MB 上限")
+    safe = _SAFE_NAME.sub("_", filename)
+    target_dir = pathlib.Path(get_settings().upload_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / f"preview_{uuid4().hex[:8]}_{safe}"
+    path.write_bytes(data)
+    try:
+        from app.indexing.preview import preview_document
+
+        report = await run_in_threadpool(preview_document, path)
+    finally:
+        path.unlink(missing_ok=True)
+    return {"data": report}
+
+
 @router.get("/documents")
 async def documents() -> dict:
     settings = get_settings()

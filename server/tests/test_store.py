@@ -8,8 +8,8 @@ from app.core.config import get_settings
 from app.indexing import store
 from app.indexing.ingest import ingest_file
 from app.indexing.manifest import Manifest
-from app.parsing.loader import load_document
 from app.parsing.chunker import build_chunks
+from app.parsing.loader import load_document
 
 CORPUS = pathlib.Path(__file__).resolve().parents[2] / "data" / "corpus"
 FIXTURE = CORPUS / "fixture_术语混写_模拟维保手册.md"

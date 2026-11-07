@@ -74,9 +74,7 @@ def test_kb_chat_stream_with_sources_and_done(client):
 
 
 def test_kb_table_question_hits_serialized_table(client):
-    r = client.post(
-        "/api/chat", json={"message": "LUB 更换的保养周期是多少小时？", "mode": "kb"}
-    )
+    r = client.post("/api/chat", json={"message": "LUB 更换的保养周期是多少小时？", "mode": "kb"})
     events = _parse_sse(r.text)
     assert "4000" in _tokens(events)
 
@@ -84,8 +82,12 @@ def test_kb_table_question_hits_serialized_table(client):
 def test_direct_without_gateway_returns_42901(client, monkeypatch):
     # 环境变量覆盖 .env 中的网关配置（含备用供应商），模拟完全未配置场景
     for var in (
-        "INDOCQA_LLM_BASE_URL", "INDOCQA_LLM_API_KEY", "INDOCQA_LLM_MODEL",
-        "INDOCQA_LLM_BACKUP_BASE_URL", "INDOCQA_LLM_BACKUP_API_KEY", "INDOCQA_LLM_BACKUP_MODEL",
+        "INDOCQA_LLM_BASE_URL",
+        "INDOCQA_LLM_API_KEY",
+        "INDOCQA_LLM_MODEL",
+        "INDOCQA_LLM_BACKUP_BASE_URL",
+        "INDOCQA_LLM_BACKUP_API_KEY",
+        "INDOCQA_LLM_BACKUP_MODEL",
     ):
         monkeypatch.setenv(var, "")
     get_settings.cache_clear()

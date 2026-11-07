@@ -8,7 +8,6 @@ import pathlib
 from functools import lru_cache
 
 from app.indexing.embedder import get_embedder
-from app.indexing.manifest import Manifest
 from app.parsing.models import ChildChunk, ParentChunk
 
 
@@ -47,14 +46,21 @@ def _save_parents(settings, parents: dict) -> None:
     p.write_text(json.dumps(parents, ensure_ascii=False), encoding="utf-8")
 
 
-def add_children(settings, children: list[ChildChunk], parents: list[ParentChunk], doc_name: str) -> None:
+def add_children(
+    settings, children: list[ChildChunk], parents: list[ParentChunk], doc_name: str
+) -> None:
     from app.indexing.bm25_index import get_bm25
 
     embedder = get_embedder(settings)
     embeddings = embedder.embed([c.text for c in children])
     metadatas = []
     for c in children:
-        meta: dict = {"doc_id": c.doc_id, "doc_name": doc_name, "section": c.section, "kind": c.kind}
+        meta: dict = {
+            "doc_id": c.doc_id,
+            "doc_name": doc_name,
+            "section": c.section,
+            "kind": c.kind,
+        }
         if c.page is not None:
             meta["page"] = c.page
         if c.table_no:
@@ -68,7 +74,12 @@ def add_children(settings, children: list[ChildChunk], parents: list[ParentChunk
     )
     store = _load_parents(settings)
     for p in parents:
-        store[p.parent_id] = {"doc_id": p.doc_id, "section": p.section, "page_start": p.page_start, "text": p.text}
+        store[p.parent_id] = {
+            "doc_id": p.doc_id,
+            "section": p.section,
+            "page_start": p.page_start,
+            "text": p.text,
+        }
     _save_parents(settings, store)
     get_bm25(settings).update({c.chunk_id: f"{c.section}\n{c.text}" for c in children})
 
@@ -137,9 +148,7 @@ def delete_doc(settings, doc_id: str) -> None:
     from app.indexing.bm25_index import get_bm25
 
     _collection(settings).delete(where={"doc_id": doc_id})
-    parents = {
-        pid: p for pid, p in _load_parents(settings).items() if p["doc_id"] != doc_id
-    }
+    parents = {pid: p for pid, p in _load_parents(settings).items() if p["doc_id"] != doc_id}
     _save_parents(settings, parents)
     get_bm25(settings).remove_doc(doc_id)
 

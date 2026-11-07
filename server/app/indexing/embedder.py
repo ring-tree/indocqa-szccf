@@ -122,11 +122,17 @@ _embedder_cache: dict[tuple, BaseEmbedder] = {}
 def get_embedder(settings) -> BaseEmbedder:
     backend = settings.embed_backend
     if backend == "auto":
-        backend = "ollama" if _ollama_available(settings.ollama_base_url, settings.ollama_embed_model) else "local"
+        backend = (
+            "ollama"
+            if _ollama_available(settings.ollama_base_url, settings.ollama_embed_model)
+            else "local"
+        )
     if backend == "ollama":
         key = ("ollama", settings.ollama_base_url, settings.ollama_embed_model)
         if key not in _embedder_cache:
-            _embedder_cache[key] = OllamaEmbedder(settings.ollama_base_url, settings.ollama_embed_model)
+            _embedder_cache[key] = OllamaEmbedder(
+                settings.ollama_base_url, settings.ollama_embed_model
+            )
     elif backend == "minilm":
         key = ("minilm",)
         if key not in _embedder_cache:

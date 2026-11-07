@@ -7,15 +7,44 @@
 import re
 from dataclasses import dataclass
 
-_CHITCHAT = re.compile(r"^(你好|您好|hi|hello|嗨|谢谢|感谢|在吗|再见|早上好|下午好|晚上好)\b", re.I)
-_FAULT = re.compile(r"报错|故障|错误码|错误代码|异常|报警|警报|fault code|error code", re.I)
+_CHITCHAT = re.compile(
+    r"^(你好|您好|hi|hello|嗨|谢谢|感谢|在吗|再见|早上好|下午好|晚上好)\b", re.IGNORECASE
+)
+_FAULT = re.compile(
+    r"报错|故障|错误码|错误代码|异常|报警|警报|fault code|error code", re.IGNORECASE
+)
 _FAULT_CODE = re.compile(r"\b[Ee][-]?\d{2,3}\b")
-_PARAM = re.compile(r"多少|额定|参数表?|周期|规格|范围|容量|流量|压力值|温度值|功率是|尺寸|重量|电压|电流|几 ")
-_TERM = re.compile(r"是什么|什么意思|什么含义|什么定义|定义是|指什么|指的是|全称|缩写|同一|一回事|一样吗|等同|区别|difference|what is|what does.*mean", re.I)
-_PROCEDURE = re.compile(r"怎么|如何|步骤|操作流程|操作方法|处理|处置|怎么办|怎么排查|怎么处理|维护流程|how to|how do", re.I)
+_PARAM = re.compile(
+    r"多少|额定|参数表?|周期|规格|范围|容量|流量|压力值|温度值|功率是|尺寸|重量|电压|电流|几 "
+)
+_TERM = re.compile(
+    r"是什么|什么意思|什么含义|什么定义|定义是|指什么|指的是|全称|缩写|同一|一回事|一样吗|等同|区别|difference|what is|what does.*mean",
+    re.IGNORECASE,
+)
+_PROCEDURE = re.compile(
+    r"怎么|如何|步骤|操作流程|操作方法|处理|处置|怎么办|怎么排查|怎么处理|维护流程|how to|how do",
+    re.IGNORECASE,
+)
 _ENTITY = re.compile(r"[A-Za-z][A-Za-z0-9.\-]{1,14}")
 _CONNECTIVE = re.compile(r"和|与|跟|以及|分别|两者|两个都|都是")
-_STOPWORDS = {"what", "is", "the", "a", "an", "of", "in", "for", "and", "how", "to", "do", "does", "mean", "are", "同一"}
+_STOPWORDS = {
+    "what",
+    "is",
+    "the",
+    "a",
+    "an",
+    "of",
+    "in",
+    "for",
+    "and",
+    "how",
+    "to",
+    "do",
+    "does",
+    "mean",
+    "are",
+    "同一",
+}
 # “平均无故障时间”等可靠性术语中的“故障”不是故障诊断意图，匹配前剔除
 _NO_FAULT_TERM = re.compile(r"(平均)?无故障(运行)?时间?")
 
@@ -45,7 +74,9 @@ def classify(question: str) -> IntentResult:
     if _FAULT.search(fault_text) or _FAULT_CODE.search(q):
         return IntentResult("fault", entities)
     # 多跳：连接词 + ≥2 实体，或“对比型术语问题”
-    if (_CONNECTIVE.search(q) and len(entities) >= 2) or (_TERM.search(q) and _CONNECTIVE.search(q)):
+    if (_CONNECTIVE.search(q) and len(entities) >= 2) or (
+        _TERM.search(q) and _CONNECTIVE.search(q)
+    ):
         return IntentResult("multihop", entities)
     if _PARAM.search(q):
         return IntentResult("param", entities)

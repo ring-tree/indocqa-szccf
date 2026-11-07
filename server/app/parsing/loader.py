@@ -62,17 +62,16 @@ def _load_pdf(path, doc_id: str) -> LoadedDoc:
     tables: list[RawTable] = []
     with pdfplumber.open(path) as pdf:
         for i, page in enumerate(pdf.pages):
-            page_text = doc[i].get_text("text") if i < doc.page_count else ""
-            found_no = _TABLE_NO.search(page_text)
-            for raw in page.extract_tables() or []:
-                rows = _clean_rows(raw)
+            section = sections_by_page[i] if i < len(sections_by_page) else ""
+            for found in page.find_tables():
+                rows = _clean_rows(found.extract())
                 if len(rows) >= 2 and any(len(r) >= 2 for r in rows):
                     tables.append(
                         RawTable(
                             rows=rows,
                             page=i + 1,
-                            section=sections_by_page[i] if i < len(sections_by_page) else "",
-                            table_no=found_no.group(0) if found_no else None,
+                            section=section,
+                            table_no=_table_no_above(page, found),
                         )
                     )
     return LoadedDoc(
@@ -135,8 +134,10 @@ def _load_md(path, doc_id: str) -> LoadedDoc:
             joined = "\n".join(buf).strip()
             if joined:
                 paragraphs.append(Paragraph(text=joined, page=None, section=section))
+                last_line[0] = buf[-1]
             buf.clear()
 
+    last_line = [""]
     for line in text.splitlines():
         s = line.rstrip()
         if s.lstrip().startswith(">"):
@@ -149,7 +150,15 @@ def _load_md(path, doc_id: str) -> LoadedDoc:
         if table_buf:
             rows = _parse_md_table(table_buf)
             if rows:
-                tables.append(RawTable(rows=rows, page=None, section=section))
+                caption = _TABLE_NO.search(last_line[0]) or _TABLE_NO.search(section)
+                tables.append(
+                    RawTable(
+                        rows=rows,
+                        page=None,
+                        section=section,
+                        table_no=caption.group(0) if caption else None,
+                    )
+                )
             table_buf = []
         m = _HEADING_MD.match(s.strip())
         if m:
@@ -164,8 +173,18 @@ def _load_md(path, doc_id: str) -> LoadedDoc:
     if table_buf:
         rows = _parse_md_table(table_buf)
         if rows:
-            tables.append(RawTable(rows=rows, page=None, section=section))
-    return LoadedDoc(doc_id=doc_id, filename=path.name, paragraphs=paragraphs, tables=tables, pages=None)
+            caption = _TABLE_NO.search(last_line[0]) or _TABLE_NO.search(section)
+            tables.append(
+                RawTable(
+                    rows=rows,
+                    page=None,
+                    section=section,
+                    table_no=caption.group(0) if caption else None,
+                )
+            )
+    return LoadedDoc(
+        doc_id=doc_id, filename=path.name, paragraphs=paragraphs, tables=tables, pages=None
+    )
 
 
 def _parse_md_table(lines: list[str]) -> list[list[str]]:
@@ -177,6 +196,17 @@ def _parse_md_table(lines: list[str]) -> list[list[str]]:
         if any(cells):
             rows.append(cells)
     return rows
+
+
+def _table_no_above(page, table) -> str | None:
+    """取表格正上方邻近文本中的“表 X-X / Table X-X”题注；找不到则回退页内首个匹配。"""
+    top = max(0, table.bbox[1] - 45)
+    try:
+        above = page.crop((0, top, page.width, table.bbox[1])).extract_text() or ""
+    except Exception:  # noqa: BLE001 pdfplumber 裁剪可能抛出多种类型，题注缺失不应中断解析
+        above = ""
+    near = _TABLE_NO.search(above) or _TABLE_NO.search(page.extract_text() or "")
+    return near.group(0) if near else None
 
 
 def _clean_rows(raw) -> list[list[str]]:

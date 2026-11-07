@@ -47,16 +47,24 @@ def build_clusters(settings=None) -> list[list[str]]:
             parent[find(a)] = find(b)
 
     seed_file = _seed_path(settings)
+    protected: set[str] = set()
     if seed_file.exists():
         for cluster in json.loads(seed_file.read_text(encoding="utf-8"))["clusters"]:
+            protected.update(m.lower() for m in cluster)
             for m in cluster[1:]:
                 union(cluster[0], m)
 
     for a, b in _extract_pairs(settings):
         union(a.strip(), b.strip())
 
+    # 频次过滤：抽取出的成员在语料中仅出现一次的多为噪声（乱序文本、偶然共现）
+    from app.indexing.bm25_index import get_bm25
+
+    corpus_text = " ".join(get_bm25(settings).docs.values())
     groups: dict[str, list[str]] = defaultdict(list)
     for name in parent:
+        if len(name) >= 3 and name.lower() not in protected and corpus_text.count(name) < 2:
+            continue
         groups[find(name)].append(name)
     clusters = [sorted(members, key=len) for members in groups.values() if len(members) >= 2]
     clusters.sort(key=lambda c: c[0].lower())
@@ -155,7 +163,6 @@ def apply_terms_to_index(settings, clusters: list[list[str]]) -> None:
         from app.indexing.bm25_index import get_bm25
 
         get_bm25(settings).update(updates)
-    return
 
 
 def main() -> int:

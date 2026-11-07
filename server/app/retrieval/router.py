@@ -4,15 +4,58 @@ from app.core.config import Settings
 
 # adaptive 模式策略表；fixed 模式使用 DEFAULT_PLAN（对照组参数）
 STRATEGIES = {
-    "term": {"strategy": "hybrid", "top_k": 6, "expand": True, "boost_table": False, "multihop": False},
-    "param": {"strategy": "hybrid", "top_k": 6, "expand": True, "boost_table": True, "multihop": False},
-    "procedure": {"strategy": "hybrid", "top_k": 6, "expand": False, "boost_table": False, "multihop": False},
-    "fault": {"strategy": "keyword", "top_k": 8, "expand": True, "boost_table": True, "multihop": False},
-    "multihop": {"strategy": "hybrid", "top_k": 6, "expand": True, "boost_table": False, "multihop": True, "max_hops": 2},
-    "general": {"strategy": "hybrid", "top_k": 6, "expand": False, "boost_table": False, "multihop": False},
+    "term": {
+        "strategy": "hybrid",
+        "top_k": 6,
+        "expand": True,
+        "boost_table": False,
+        "multihop": False,
+    },
+    "param": {
+        "strategy": "hybrid",
+        "top_k": 6,
+        "expand": True,
+        "boost_table": True,
+        "multihop": False,
+    },
+    "procedure": {
+        "strategy": "hybrid",
+        "top_k": 6,
+        "expand": False,
+        "boost_table": False,
+        "multihop": False,
+    },
+    "fault": {
+        "strategy": "keyword",
+        "top_k": 8,
+        "expand": True,
+        "boost_table": True,
+        "multihop": False,
+    },
+    "multihop": {
+        "strategy": "hybrid",
+        "top_k": 6,
+        "expand": True,
+        "boost_table": False,
+        "multihop": True,
+        "max_hops": 2,
+    },
+    "general": {
+        "strategy": "hybrid",
+        "top_k": 6,
+        "expand": False,
+        "boost_table": False,
+        "multihop": False,
+    },
     "chitchat": {"strategy": "none", "skip_retrieval": True},
 }
-DEFAULT_PLAN = {"strategy": "hybrid", "top_k": None, "expand": False, "boost_table": False, "multihop": False}
+DEFAULT_PLAN = {
+    "strategy": "hybrid",
+    "top_k": None,
+    "expand": False,
+    "boost_table": False,
+    "multihop": False,
+}
 
 
 def plan_for(intent: str, mode: str, settings: Settings) -> dict:

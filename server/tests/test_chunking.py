@@ -25,7 +25,7 @@ def test_md_sections_preserved():
 
 
 def test_table_chunk_independent_and_serialized():
-    doc, children, _ = _load_fixture()
+    _doc, children, _parents = _load_fixture()
     tables = [c for c in children if c.kind == "table"]
     assert tables, "表格未成为独立子块"
     joined = "\n".join(t.text for t in tables)
@@ -50,7 +50,7 @@ def test_parent_contains_children_and_page_meta():
 
 
 def test_numbered_list_not_cut_mid_item():
-    doc, children, _ = _load_fixture()
+    _doc, children, _parents = _load_fixture()
     s12 = [c for c in children if "立即停机" in c.text]
     assert s12, "S-12 步骤未入库"
     text = s12[0].text

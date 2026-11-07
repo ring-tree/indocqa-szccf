@@ -46,6 +46,13 @@ class DocumentNotFoundError(AppError):
     http_status = 404
 
 
+class BackendMismatchError(AppError):
+    """40902 现有向量库与当前嵌入后端不一致，需重建后再入库。"""
+
+    code = 40902
+    http_status = 409
+
+
 class UpstreamError(AppError):
     """42901 上游模型限流或不可用（已尝试主备切换）。"""
 

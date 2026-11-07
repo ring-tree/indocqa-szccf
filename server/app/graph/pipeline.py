@@ -17,7 +17,9 @@ from app.retrieval.searcher import Hit
 
 _LEVEL = {"low": 0, "mid": 1, "high": 2}
 _CITED = re.compile(r"\[(\d+)\]")
-_CHITCHAT_SYSTEM = "你是企业知识库助手的门面。对寒暄给出简短友好的回应，一两句话即可，不涉及任何技术内容。"
+_CHITCHAT_SYSTEM = (
+    "你是企业知识库助手的门面。对寒暄给出简短友好的回应，一两句话即可，不涉及任何技术内容。"
+)
 
 
 def _source_item(hit: Hit, idx: int) -> dict:
@@ -62,10 +64,16 @@ async def chat_stream(
             yield ev
         return
 
-    yield {"event": "sources", "data": {"items": [_source_item(h, i) for i, h in enumerate(hits, 1)]}}
+    yield {
+        "event": "sources",
+        "data": {"items": [_source_item(h, i) for i, h in enumerate(hits, 1)]},
+    }
 
     if not hits:
-        yield {"event": "token", "data": {"delta": REFUSAL_TEMPLATE.format(sections="全部已入库文档")}}
+        yield {
+            "event": "token",
+            "data": {"delta": REFUSAL_TEMPLATE.format(sections="全部已入库文档")},
+        }
         yield {"event": "done", "data": _done("low", "检索无有效命中，答案为拒答说明")}
         return
 
@@ -79,6 +87,27 @@ async def chat_stream(
         return
 
     answer = "".join(answer_parts)
+    _cov, has_valid_citation = _citation_coverage(answer, hits)
+    if hits and not has_valid_citation:
+        # 引用补正：回答缺少有效引用时带强指令重生成一次（可从 trace 观察）
+        yield {
+            "event": "trace",
+            "data": {"stage": "citation_retry", "result": "回答缺少有效引用，重生成补正"},
+        }
+        answer_parts = []
+        retry_question = (
+            f"{message}\n（必须做到：每个事实句末标注引用编号，如 [1] [2]，编号对应资料标号）"
+        )
+        try:
+            yield {"event": "token", "data": {"delta": "\n——引用补正——\n"}}
+            async for delta in stream_answer(retry_question, hits, gateway):
+                answer_parts.append(delta)
+                yield {"event": "token", "data": {"delta": delta}}
+        except UpstreamError:
+            pass  # 补正失败保留原答案
+        if answer_parts:
+            answer = "".join(answer_parts)
+
     level, reason = await _confidence(message, answer, hits, gateway, settings)
     yield {"event": "done", "data": _done(level, reason)}
 
@@ -87,7 +116,10 @@ async def _chitchat_reply(message: str, gateway: LLMGateway) -> AsyncIterator[di
     if gateway.configured:
         try:
             async for delta in gateway.stream(
-                [{"role": "system", "content": _CHITCHAT_SYSTEM}, {"role": "user", "content": message}]
+                [
+                    {"role": "system", "content": _CHITCHAT_SYSTEM},
+                    {"role": "user", "content": message},
+                ]
             ):
                 yield {"event": "token", "data": {"delta": delta}}
         except UpstreamError:
@@ -155,7 +187,7 @@ async def _self_eval(question: str, answer: str, gateway: LLMGateway) -> str | N
         text = await asyncio.wait_for(
             gateway.complete([{"role": "user", "content": prompt}]), timeout=8
         )
-    except (UpstreamError, asyncio.TimeoutError):
+    except (TimeoutError, UpstreamError):
         return None
     for word in ("充分", "部分", "不足"):
         if word in text:

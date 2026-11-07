@@ -125,15 +125,26 @@ def decide_node(state: GState) -> dict:
     """
     plan = state["plan"]
     if not plan.get("multihop") or state["hop"] >= plan.get("max_hops", 2):
-        return {"need_hop": False, "trace": state["trace"] + [{"stage": "decide", "result": "收敛，结束检索"}]}
+        return {
+            "need_hop": False,
+            "trace": state["trace"] + [{"stage": "decide", "result": "收敛，结束检索"}],
+        }
     entities = list(state.get("entities", []))
     low_q = state["question"].lower()
     for cluster in terms_mod.load_clusters():
         entities.extend(m for m in cluster if len(m) >= 3 and m.lower() in low_q)
     covered = " ".join(h.text for h in state["hits"]).lower()
     missing = [e for e in dict.fromkeys(entities) if e.lower() not in covered]
+    docs = {h.doc_name for h in state["hits"]}
     if not missing:
-        return {"need_hop": False, "trace": state["trace"] + [{"stage": "decide", "result": "实体已全覆盖，结束检索"}]}
+        if len(entities) >= 2 and len(docs) < 2:
+            # 多实体问题只命中单一文档：补查一轮，尝试带入其他文档的定义块
+            missing = entities[:2]
+        else:
+            return {
+                "need_hop": False,
+                "trace": state["trace"] + [{"stage": "decide", "result": "实体已全覆盖，结束检索"}],
+            }
     sub_query = " ".join(missing[:3])
     return {
         "need_hop": True,

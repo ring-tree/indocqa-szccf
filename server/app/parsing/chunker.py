@@ -46,10 +46,8 @@ def build_chunks(doc: LoadedDoc) -> tuple[list[ChildChunk], list[ParentChunk]]:
     for kind, text, page, section, _ in items:
         section_groups.setdefault(section or "未分节", []).append((kind, text, page))
 
-    parent_counter = 0
-    for section, group in section_groups.items():
+    for parent_counter, (section, group) in enumerate(section_groups.items()):
         parent_id = f"{doc.doc_id}-p{parent_counter:03d}"
-        parent_counter += 1
         pages = [p for _k, _t, p in group if p is not None]
         packed = _pack(group)
         child_texts = []

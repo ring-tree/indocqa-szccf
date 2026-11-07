@@ -8,8 +8,8 @@ import sys
 import time
 
 from app.core.config import get_settings
-from app.indexing.manifest import Manifest
 from app.indexing import store
+from app.indexing.manifest import Manifest
 from app.parsing.chunker import build_chunks
 from app.parsing.loader import MD_EXTS, load_document
 
@@ -22,6 +22,7 @@ def ingest_file(path: pathlib.Path, settings=None, stored_name: str | None = Non
     started = time.perf_counter()
     content_hash = _hash_of(path)
     manifest = Manifest(pathlib.Path(settings.chroma_dir) / "manifest.json")
+    _ensure_backend_match(settings, manifest)
     existed = manifest.has_hash(content_hash)
     if existed:
         info = manifest.get(existed)
@@ -37,17 +38,27 @@ def ingest_file(path: pathlib.Path, settings=None, stored_name: str | None = Non
     doc = load_document(path)
     children, parents = build_chunks(doc)
     if not children:
-        return {"docId": doc.doc_id, "filename": doc.filename, "pages": doc.pages,
-                "chunks": 0, "durationMs": 0, "duplicated": False}
+        return {
+            "docId": doc.doc_id,
+            "filename": doc.filename,
+            "pages": doc.pages,
+            "chunks": 0,
+            "durationMs": 0,
+            "duplicated": False,
+        }
     store.add_children(settings, children, parents, doc.filename)
-    manifest.upsert(doc.doc_id, {
-        "filename": doc.filename,
-        "hash": content_hash,
-        "pages": doc.pages,
-        "chunks": len(children),
-        "tables": len(doc.tables),
-        "stored_name": stored_name,
-    })
+    manifest.upsert(
+        doc.doc_id,
+        {
+            "filename": doc.filename,
+            "hash": content_hash,
+            "pages": doc.pages,
+            "chunks": len(children),
+            "tables": len(doc.tables),
+            "stored_name": stored_name,
+            "backend": store.get_embedder(settings).backend_id,
+        },
+    )
     manifest.save()
     return {
         "docId": doc.doc_id,
@@ -68,6 +79,23 @@ def ingest_dir(directory: pathlib.Path, settings=None) -> list[dict]:
     return results
 
 
+def _ensure_backend_match(settings, manifest: Manifest) -> None:
+    """向量库集合按嵌入后端隔离，但 manifest 是全局的——切换后端后旧 manifest
+    会让入库被“内容已存在”跳过，得到静默空库。此处强制校验并给出重建指引。"""
+    from app.core.exceptions import BackendMismatchError
+    from app.indexing.embedder import get_embedder
+
+    recorded = manifest.data.get("backend")
+    current = get_embedder(settings).backend_id
+    if recorded and recorded != current:
+        raise BackendMismatchError(
+            f"知识库由嵌入后端 {recorded} 构建，当前后端为 {current}",
+            detail=f"请执行 python -m app.indexing.ingest --rebuild 重建，或删除 {settings.chroma_dir}",
+        )
+    if not recorded:
+        manifest.data["backend"] = current
+
+
 def _hash_of(path: pathlib.Path) -> str:
     import hashlib
 
@@ -77,10 +105,26 @@ def _hash_of(path: pathlib.Path) -> str:
 def main(argv: list[str]) -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     settings = get_settings()
-    target = pathlib.Path(argv[0]) if argv else pathlib.Path(settings.corpus_dir)
-    targets = [target] if target.is_file() else sorted(
-        p for p in target.iterdir()
-        if p.is_file() and p.suffix.lower() in ALLOWED_EXTS and p.name not in SKIP_FILES
+    args = list(argv)
+    if "--preview" in args:
+        from app.indexing.preview import main as preview_main
+
+        return preview_main([a for a in args if a != "--preview"])
+    if "--rebuild" in args:
+        import shutil
+
+        shutil.rmtree(pathlib.Path(settings.chroma_dir), ignore_errors=True)
+        print(f"已清空向量库目录 {settings.chroma_dir}，开始全量重建")
+        args = [a for a in args if a != "--rebuild"]
+    target = pathlib.Path(args[0]) if args else pathlib.Path(settings.corpus_dir)
+    targets = (
+        [target]
+        if target.is_file()
+        else sorted(
+            p
+            for p in target.iterdir()
+            if p.is_file() and p.suffix.lower() in ALLOWED_EXTS and p.name not in SKIP_FILES
+        )
     )
     if not targets:
         print(f"目录无可用文档: {target}")
