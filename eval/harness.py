@@ -22,9 +22,10 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "server"))
 
-# 嵌入后端可由外部指定（对比实验用）：EVAL_EMBED_BACKEND / EVAL_EMBED_LOCAL_MODEL
+# 嵌入后端可由外部指定（对比实验用）：EVAL_EMBED_BACKEND / EVAL_EMBED_LOCAL_MODEL / EVAL_EMBED_LOCAL_BATCH
 EVAL_EMBED_BACKEND = os.environ.get("EVAL_EMBED_BACKEND", "local")
 EVAL_EMBED_LOCAL_MODEL = os.environ.get("EVAL_EMBED_LOCAL_MODEL")
+EVAL_EMBED_LOCAL_BATCH = os.environ.get("EVAL_EMBED_LOCAL_BATCH")
 
 CONFIGS = [
     ("B2_fixed", {"INDOCQA_RETRIEVAL_MODE": "fixed"}),
@@ -58,6 +59,8 @@ def apply_env(env: dict) -> None:
     os.environ["INDOCQA_EMBED_BACKEND"] = EVAL_EMBED_BACKEND
     if EVAL_EMBED_LOCAL_MODEL:
         os.environ["INDOCQA_EMBED_LOCAL_MODEL"] = EVAL_EMBED_LOCAL_MODEL
+    if EVAL_EMBED_LOCAL_BATCH:
+        os.environ["INDOCQA_EMBED_LOCAL_BATCH"] = EVAL_EMBED_LOCAL_BATCH
     os.environ.update(env)
     get_settings.cache_clear()
 

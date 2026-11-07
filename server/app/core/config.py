@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     # auto=优先 Ollama（运行中且模型存在时），否则 local；可显式 local / ollama / minilm
     embed_backend: str = "auto"
     embed_local_model: str = "BAAI/bge-small-zh-v1.5"
+    embed_local_batch: int = 32
     ollama_base_url: str = "http://localhost:11434"
     ollama_embed_model: str = "bge-m3"
 

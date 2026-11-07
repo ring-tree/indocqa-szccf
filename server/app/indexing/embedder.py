@@ -35,24 +35,23 @@ class BaseEmbedder:
 class LocalEmbedder(BaseEmbedder):
     """fastembed 进程内推理：模型一次加载常驻，查询毫秒级。
 
-    batch_size 限制单次推理批量——大模型（如 e5-large 24 层）在 CPU 上
-    大批量注意力缓冲可达数 GB，须按机器内存控制。
+    批量控制在 embed() 调用侧（fastembed 0.9 构造函数不接受 batch_size，
+    其默认 256 条批量在 CPU 上对大模型会触发数 GB 注意力缓冲分配失败）。
     """
 
-    def __init__(self, model_name: str, batch_size: int = 32, max_length: int = 512):
+    def __init__(self, model_name: str, batch_size: int = 32):
         # 弱网环境默认走 HF 镜像下载，模型缓存后离线可用（不覆盖显式配置）
         import os
 
         os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
         from fastembed import TextEmbedding
 
-        # max_length 统一 512：长上下文模型（如 jina 8192）按默认长度分配注意力缓冲，
-        # CPU 上可达数 GB 直接 OOM；切块上限本就 ≤900 字符，512 token 足够
-        self._model = TextEmbedding(model_name, batch_size=batch_size, max_length=max_length)
+        self._model = TextEmbedding(model_name)
+        self._batch = batch_size
         self.backend_id = "fe-" + model_name.split("/")[-1].replace(":", "-")
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        return [[float(x) for x in vec] for vec in self._model.embed(texts)]
+        return [[float(x) for x in vec] for vec in self._model.embed(texts, batch_size=self._batch)]
 
     def query_embed(self, texts: list[str]) -> list[list[float]]:
         if hasattr(self._model, "query_embed"):
@@ -138,7 +137,7 @@ def get_embedder(settings) -> BaseEmbedder:
         if key not in _embedder_cache:
             _embedder_cache[key] = MiniLMEmbedder()
     else:
-        key = ("local", settings.embed_local_model)
+        key = ("local", settings.embed_local_model, settings.embed_local_batch)
         if key not in _embedder_cache:
-            _embedder_cache[key] = LocalEmbedder(settings.embed_local_model)
+            _embedder_cache[key] = LocalEmbedder(settings.embed_local_model, settings.embed_local_batch)
     return _embedder_cache[key]
