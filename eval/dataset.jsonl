@@ -1,0 +1,36 @@
+{"id": "term-01", "type": "term", "question": "MTBF 是什么意思？和平均无故障时间是一回事吗？", "expected_sources": ["fixture_术语混写"], "answer_points": ["8000", "同一"]}
+{"id": "term-02", "type": "term", "question": "LUB 指的是什么油？", "expected_sources": ["fixture_术语混写"], "answer_points": ["润滑油", "46"]}
+{"id": "term-03", "type": "term", "question": "油分芯是什么部件？", "expected_sources": ["fixture_术语混写"], "answer_points": ["油气分离", "OS-4612"]}
+{"id": "term-04", "type": "term", "question": "air compressor 和空压机是同一种设备吗？", "expected_sources": ["螺杆式空压机", "fixture_术语混写"], "answer_points": ["压缩"]}
+{"id": "term-05", "type": "term", "question": "receiver tank（储气罐）在系统中起什么作用？", "expected_sources": ["compressed_air_sourcebook"], "answer_points": ["storage", "demand"]}
+{"id": "term-06", "type": "term", "question": "screw compressor 指什么类型的压缩机？", "expected_sources": ["螺杆式空压机"], "answer_points": ["螺杆"]}
+{"id": "term-07", "type": "term", "question": "无油静音空气压缩机适用于什么场合？", "expected_sources": ["无油静音"], "answer_points": ["无油"]}
+{"id": "param-01", "type": "param", "question": "LUB 更换的保养周期是多少小时？", "expected_sources": ["fixture_术语混写"], "answer_points": ["4000"]}
+{"id": "param-02", "type": "param", "question": "空气过滤器滤芯多久更换一次？对应什么耗材？", "expected_sources": ["fixture_术语混写"], "answer_points": ["2000", "AF-4612"]}
+{"id": "param-03", "type": "param", "question": "皮带张紧检查的周期是多少？", "expected_sources": ["fixture_术语混写"], "answer_points": ["500"]}
+{"id": "param-04", "type": "param", "question": "ZX-50 机组的 MTBF 额定值是多少小时？", "expected_sources": ["fixture_术语混写"], "answer_points": ["8000"]}
+{"id": "param-05", "type": "param", "question": "ZX-50 主电机的绝缘等级是什么？", "expected_sources": ["fixture_术语混写"], "answer_points": ["F"]}
+{"id": "param-06", "type": "param", "question": "TS32S 系列螺杆压缩机是哪个厂家的什么产品？", "expected_sources": ["螺杆式空压机"], "answer_points": ["TS32S"]}
+{"id": "param-07", "type": "param", "question": "储气罐可以用来控制什么？", "expected_sources": ["compressed_air_sourcebook"], "answer_points": ["demand"]}
+{"id": "proc-01", "type": "procedure", "question": "排气温度过高应该按什么步骤处理？", "expected_sources": ["fixture_术语混写"], "answer_points": ["停机", "散热"]}
+{"id": "proc-02", "type": "procedure", "question": "E-05 报警的处理步骤编号是什么？第一步做什么？", "expected_sources": ["fixture_术语混写"], "answer_points": ["S-12", "停机"]}
+{"id": "proc-03", "type": "procedure", "question": "空气滤清器应该如何保养？", "expected_sources": ["螺杆式空压机"], "answer_points": ["滤"]}
+{"id": "proc-04", "type": "procedure", "question": "最小压力止回阀的保养要注意什么？", "expected_sources": ["螺杆式空压机"], "answer_points": ["压力"]}
+{"id": "proc-05", "type": "procedure", "question": "日常巡检每天需要记录哪些数据？", "expected_sources": ["fixture_术语混写"], "answer_points": ["排气压力", "运行小时"]}
+{"id": "proc-06", "type": "procedure", "question": "空压机吸气口的空气过滤器有什么作用？", "expected_sources": ["无油静音"], "answer_points": ["尘埃", "消音"]}
+{"id": "proc-07", "type": "procedure", "question": "为什么要对压缩空气系统做基线测量（baselining）？", "expected_sources": ["compressed_air_sourcebook"], "answer_points": ["baseline"]}
+{"id": "fault-01", "type": "fault", "question": "报错 E05 是什么含义？", "expected_sources": ["fixture_术语混写"], "answer_points": ["排气温度过高"]}
+{"id": "fault-02", "type": "fault", "question": "故障码 E-01 代表什么问题？", "expected_sources": ["fixture_术语混写"], "answer_points": ["相序"]}
+{"id": "fault-03", "type": "fault", "question": "E-11 报警是什么原因？", "expected_sources": ["fixture_术语混写"], "answer_points": ["空滤压差"]}
+{"id": "fault-04", "type": "fault", "question": "空压机报错代码 E-05 怎么处理？", "expected_sources": ["fixture_术语混写"], "answer_points": ["停机", "S-12"]}
+{"id": "fault-05", "type": "fault", "question": "固件历史版本中 E-05 曾显示为什么代码？", "expected_sources": ["fixture_术语混写"], "answer_points": ["E05"]}
+{"id": "fault-06", "type": "fault", "question": "压缩机排气温度持续过高可能有哪些原因？", "expected_sources": ["fixture_术语混写", "螺杆式空压机"], "answer_points": ["散热"]}
+{"id": "fault-07", "type": "fault", "question": "空滤压差报警应该检查什么？", "expected_sources": ["fixture_术语混写"], "answer_points": ["空滤"]}
+{"id": "fault-08", "type": "fault", "question": "E-05 处理后仍频繁触发建议做什么？", "expected_sources": ["fixture_术语混写"], "answer_points": ["温度传感器"]}
+{"id": "multi-01", "type": "multihop", "question": "设备手册里的 MTBF 和储气罐的作用分别是什么？", "expected_sources": ["fixture_术语混写", "compressed_air_sourcebook"], "answer_points": ["8000", "storage"]}
+{"id": "multi-02", "type": "multihop", "question": "LUB 的更换周期和空气滤清器的保养方法分别是什么？", "expected_sources": ["fixture_术语混写", "螺杆式空压机"], "answer_points": ["4000", "滤"]}
+{"id": "multi-03", "type": "multihop", "question": "E-05 的含义和排气温度过高的处置步骤分别是什么？", "expected_sources": ["fixture_术语混写"], "answer_points": ["排气温度过高", "停机"]}
+{"id": "multi-04", "type": "multihop", "question": "ZX-50 的绝缘等级和皮带张紧检查周期分别是多少？", "expected_sources": ["fixture_术语混写"], "answer_points": ["F", "500"]}
+{"id": "multi-05", "type": "multihop", "question": "MTBF 的额定值和 CFM 的含义分别是什么？", "expected_sources": ["fixture_术语混写", "compressed_air_sourcebook"], "answer_points": ["8000", "cubic feet"]}
+{"id": "multi-06", "type": "multihop", "question": "无油静音空压机的过滤方式和 ZX-50 的润滑油牌号分别是什么？", "expected_sources": ["无油静音", "fixture_术语混写"], "answer_points": ["空气过滤器", "46"]}
+{"id": "multi-07", "type": "multihop", "question": "receiver tank 的作用和 E-11 的含义分别是什么？", "expected_sources": ["compressed_air_sourcebook", "fixture_术语混写"], "answer_points": ["demand", "空滤压差"]}

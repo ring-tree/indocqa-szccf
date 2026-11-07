@@ -1,0 +1,213 @@
+{
+ "builtAt": "2026-11-07T22:08:32",
+ "clusters": [
+  [
+   "ACFM",
+   "实际立方英尺每分钟",
+   "actual cubic feet per minute"
+  ],
+  [
+   "CAGI.",
+   "Running time: 13 minutes"
+  ],
+  [
+   "CFM",
+   "立方英尺每分钟",
+   "cubic feet per minute"
+  ],
+  [
+   "E05",
+   "E-05"
+  ],
+  [
+   "FRL",
+   "filter-regulator-lubricator"
+  ],
+  [
+   "GRN",
+   "WHT"
+  ],
+  [
+   "HH",
+   "器节调力压阀旋螺"
+  ],
+  [
+   "HMI",
+   "人机界面"
+  ],
+  [
+   "ISO",
+   "国际标准化组织"
+  ],
+  [
+   "MAX",
+   "旋阀的指针将指向最大位置"
+  ],
+  [
+   "MIN",
+   "螺旋阀的指针指向最小位置"
+  ],
+  [
+   "MTBF",
+   "平均无故障时间",
+   "无故障运行时间",
+   "M.T.B.F.",
+   "Mean Time Between Failures",
+   "Mean Time Between Failures，平均无故障时间"
+  ],
+  [
+   "OSHA",
+   "职业安全与健康管理局"
+  ],
+  [
+   "PLC",
+   "可编程逻辑控制器"
+  ],
+  [
+   "ppm",
+   "PPM",
+   "百万分之一",
+   "parts per million"
+  ],
+  [
+   "R.H.",
+   "0 WVP"
+  ],
+  [
+   "SCFM",
+   "标准立方英尺每分钟",
+   "standard cubic feet per minute"
+  ],
+  [
+   "VSD",
+   "VFD",
+   "变频器",
+   "变频驱动",
+   "变转速驱动",
+   "variable speed drive",
+   "variable frequency drive"
+  ],
+  [
+   "兆帕",
+   "MPa"
+  ],
+  [
+   "冷凝水",
+   "凝结水",
+   "condensate"
+  ],
+  [
+   "分贝",
+   "dBA",
+   "dB(A)"
+  ],
+  [
+   "千帕",
+   "kPa"
+  ],
+  [
+   "千瓦",
+   "kW"
+  ],
+  [
+   "压力调节阀",
+   "压力调节器",
+   "pressure regulator"
+  ],
+  [
+   "巴",
+   "bar"
+  ],
+  [
+   "干燥器",
+   "干燥机",
+   "dryer"
+  ],
+  [
+   "最小压力阀",
+   "最小压力止回阀",
+   "minimum pressure valve"
+  ],
+  [
+   "机油",
+   "润滑油",
+   "LUB"
+  ],
+  [
+   "气罐",
+   "储气罐",
+   "空气储罐",
+   "air receiver",
+   "receiver tank"
+  ],
+  [
+   "油冷器",
+   "油冷却器",
+   "oil cooler"
+  ],
+  [
+   "油分芯",
+   "油分离芯",
+   "油气分离器",
+   "oil separator"
+  ],
+  [
+   "温控阀",
+   "温度控制阀",
+   "thermostatic valve"
+  ],
+  [
+   "空压机",
+   "压缩机",
+   "空气压缩机",
+   "air compressor"
+  ],
+  [
+   "空滤",
+   "空气过滤器",
+   "空气滤清器",
+   "air filter"
+  ],
+  [
+   "维护周期",
+   "保养周期",
+   "保养间隔",
+   "maintenance interval"
+  ],
+  [
+   "螺杆机",
+   "螺杆压缩机",
+   "螺杆式压缩机",
+   "screw compressor"
+  ],
+  [
+   "表压",
+   "psig",
+   "PSIG",
+   "磅每平方英寸表压",
+   "pounds per square inch gauge"
+  ],
+  [
+   "调节器",
+   "进气调节器",
+   "Sullicon",
+   "控制气体进入进气调节器"
+  ],
+  [
+   "转速",
+   "rpm",
+   "RPM",
+   "转每分钟",
+   "r/min"
+  ],
+  [
+   "进气阀",
+   "进气蝶阀",
+   "intake valve"
+  ],
+  [
+   "露点",
+   "dew point"
+  ]
+ ]
+}
