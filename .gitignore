@@ -25,3 +25,6 @@ models/
 Thumbs.db
 .idea/
 .vscode/
+
+# 前端构建产物
+web/dist/
