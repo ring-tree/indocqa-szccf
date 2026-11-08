@@ -1,0 +1,45 @@
+{
+  "documents": {
+    "deeaf015ddfa0263": {
+      "filename": "compressed_air_sourcebook_en.pdf",
+      "hash": "deeaf015ddfa026330f3ff9af877395c0b92e095851ed2c585afaf2d36b77e19",
+      "pages": 128,
+      "chunks": 289,
+      "tables": 22,
+      "stored_name": null,
+      "backend": "fe-bge-small-zh-v1.5",
+      "ingestedAt": "2026-11-08T17:13:08"
+    },
+    "683220dead04046d": {
+      "filename": "fixture_术语混写_模拟维保手册.md",
+      "hash": "683220dead04046d576eff6d811228427065b0e9ab898665d9f9e5240c0beebc",
+      "pages": null,
+      "chunks": 6,
+      "tables": 2,
+      "stored_name": null,
+      "backend": "fe-bge-small-zh-v1.5",
+      "ingestedAt": "2026-11-08T17:13:09"
+    },
+    "e69971d876dacc17": {
+      "filename": "无油静音空压机操作说明_厂商公开.pdf",
+      "hash": "e69971d876dacc17f8a873991380c2500db5b3f1f59f314e9824336ba729ac05",
+      "pages": 10,
+      "chunks": 13,
+      "tables": 2,
+      "stored_name": null,
+      "backend": "fe-bge-small-zh-v1.5",
+      "ingestedAt": "2026-11-08T17:13:12"
+    },
+    "7b079e032f68bcb3": {
+      "filename": "螺杆式空压机操作手册_厂商公开.pdf",
+      "hash": "7b079e032f68bcb3cc62db6c9d34696962210837609c00253b630098a502e2e1",
+      "pages": 48,
+      "chunks": 106,
+      "tables": 43,
+      "stored_name": null,
+      "backend": "fe-bge-small-zh-v1.5",
+      "ingestedAt": "2026-11-08T17:13:30"
+    }
+  },
+  "backend": "fe-bge-small-zh-v1.5"
+}

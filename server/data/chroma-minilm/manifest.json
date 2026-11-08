@@ -1,0 +1,15 @@
+{
+  "documents": {
+    "683220dead04046d": {
+      "filename": "fixture_术语混写_模拟维保手册.md",
+      "hash": "683220dead04046d576eff6d811228427065b0e9ab898665d9f9e5240c0beebc",
+      "pages": null,
+      "chunks": 6,
+      "tables": 2,
+      "stored_name": null,
+      "backend": "minilm",
+      "ingestedAt": "2026-11-08T17:13:49"
+    }
+  },
+  "backend": "minilm"
+}

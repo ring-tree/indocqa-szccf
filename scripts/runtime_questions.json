@@ -1,0 +1,10 @@
+[
+  {"type": "term", "question": "MTBF 是什么意思？", "points": ["平均无故障", "8000"]},
+  {"type": "param", "question": "LUB 更换的保养周期是多少小时？", "points": ["4000"]},
+  {"type": "procedure", "question": "排气温度过高应该怎么处理？", "points": ["停机", "油冷"]},
+  {"type": "fault", "question": "报错 E05 是什么含义？", "points": ["排气温度过高"]},
+  {"type": "multihop", "question": "MTBF 和储气罐的作用分别是什么？", "points": ["8000", "storage"]},
+  {"type": "chitchat", "question": "你好"},
+  {"type": "refuse", "question": "量子计算机的工作原理是什么？"},
+  {"type": "en", "question": "What is the purpose of baselining a compressed air system?", "points": ["baseline", "demand"]}
+]
