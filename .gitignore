@@ -28,3 +28,6 @@ Thumbs.db
 
 # 前端构建产物
 web/dist/
+
+# 前端依赖（本地安装）
+web/node_modules/
