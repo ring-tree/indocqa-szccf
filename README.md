@@ -105,7 +105,7 @@ flowchart LR
 
 四个模式是"模型从哪来、谁来推理"的四种方案（`server/.env` 中 `INDOCQA_EMBED_BACKEND` 显式选择）：`local`（进程内直调项目 `models/` 权重，克隆即含默认模型、完全离线，~6ms）、`ollama`（本机 Ollama 服务，质量最优：bge-m3 下 Recall 100%/多跳 73%，~700ms）、`minilm`（内置兜底）、`auto`（探测 Ollama 运行则用之，否则落 local）。
 
-`models/` 目录两种布局：**便携布局** `models/<模型短名>/`（真实权重文件，随 git 分发，加载优先级最高）；**缓存布局** `models/models--*/`（hf_hub 下载缓存，软链接结构不入 git，切换到未分发模型时经镜像自动下载）。`local` 是可插拔槽位——`INDOCQA_EMBED_LOCAL_MODEL` 可指到 e5-large（实测 95%，配 `INDOCQA_EMBED_LOCAL_BATCH=8`）等模型，完整对比见评测报告附录。
+`models/` 目录始终只有平铺的真实权重文件（无软链接）：默认模型随 git 分发克隆即用；用到未分发模型时经镜像下载，完成后自动把真实文件归位到 `models/<模型短名>/` 并删除全部 hf 缓存结构。`local` 是可插拔槽位——`INDOCQA_EMBED_LOCAL_MODEL` 可指到 e5-large（实测 95%，配 `INDOCQA_EMBED_LOCAL_BATCH=8`）等模型，完整对比见评测报告附录。
 
 ## 快速部署与实验复现
 

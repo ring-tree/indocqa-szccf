@@ -19,7 +19,7 @@ eval/results/raw/
 server/data/chroma/
 server/data/cache/
 # 模型目录：便携布局 models/<模型短名>/（真实权重）随仓库分发；
-# 仅忽略 hf_hub 下载缓存布局（软链接/锁文件，跨平台检出不可靠）与临时下载
+# 仅忽略下载过程中的瞬态 hf 缓存布局（含软链接；下载完成即自动归位平铺并清理）
 models/models--*/
 models/blobs/
 models/.locks/

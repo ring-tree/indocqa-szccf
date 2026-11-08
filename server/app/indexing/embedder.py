@@ -32,13 +32,52 @@ class BaseEmbedder:
         return self.embed(texts)
 
 
+def _portable_dir(cache_dir: str, model_name: str):
+    """平铺布局目录：models/<模型短名>/（如 models/bge-small-zh-v1.5/）。"""
+    import pathlib
+
+    return pathlib.Path(cache_dir) / model_name.split("/")[-1].replace(":", "-")
+
+
+def _materialize_portable(cache_dir: str, model_name: str) -> bool:
+    """把 hf_hub 缓存布局中的模型文件解引用归位到平铺目录，随后删除全部缓存结构。
+
+    归位后 models/ 下只剩真实文件（无软链接），后续加载直接走便携路径。
+    返回是否成功归位。
+    """
+    import pathlib
+    import shutil
+
+    cache = pathlib.Path(cache_dir)
+    org, _, short = model_name.partition("/")
+    short = short.replace(":", "-") or org.replace(":", "-")
+    repo_dirs = sorted(cache.glob(f"models--*--{short}")) or sorted(cache.glob("models--*"))
+    snapshot_files: list[pathlib.Path] = []
+    for repo_dir in repo_dirs:
+        for snap in repo_dir.glob("snapshots/*"):
+            snapshot_files.extend(f for f in snap.iterdir() if f.is_file() or f.is_symlink())
+    if not snapshot_files:
+        return False
+
+    portable = cache / short
+    portable.mkdir(parents=True, exist_ok=True)
+    for f in snapshot_files:
+        dest = portable / f.name
+        if not dest.exists():
+            shutil.copyfile(f, dest)  # copyfile 天然解引用软链接
+    for junk in list(cache.glob("models--*")) + [cache / "blobs", cache / ".locks", cache / "CACHEDIR.TAG"]:
+        if junk.exists():
+            shutil.rmtree(junk) if junk.is_dir() else junk.unlink()
+    return True
+
+
 class LocalEmbedder(BaseEmbedder):
     """fastembed 进程内推理：模型一次加载常驻，查询毫秒级。
 
-    模型文件两种形态（均在项目 models/ 目录下）：
-    - 便携布局 `models/<模型短名>/`（真实权重文件，随 git 分发，克隆即用、完全离线）
-    - 缓存布局 `models/models--*/`（hf_hub 下载缓存，首次用到未随仓库分发的模型时
-      经镜像自动下载至此，含软链接与锁文件，不入 git）
+    models/ 目录始终只保存平铺的真实权重文件（`models/<模型短名>/`，无软链接）：
+    - 目录已含该模型 → 直接加载（随 git 分发的默认模型克隆即用，完全离线）
+    - 目录未含 → 经镜像下载（hf_hub 内部会短暂使用带软链接的缓存布局），
+      下载完成后立即把真实文件解引用归位到平铺布局并删除全部缓存结构
     批量控制在 embed() 调用侧（fastembed 0.9 构造函数不接受 batch_size，
     其默认 256 条批量在 CPU 上对大模型会触发数 GB 注意力缓冲分配失败）。
     """
@@ -51,15 +90,19 @@ class LocalEmbedder(BaseEmbedder):
         from fastembed import TextEmbedding
 
         specific_path = None
+        downloaded = False
         if cache_dir:
             pathlib.Path(cache_dir).mkdir(parents=True, exist_ok=True)
-            # 便携布局优先：目录内含 onnx 权重即视为完整模型，免下载直接加载
-            portable = pathlib.Path(cache_dir) / model_name.split("/")[-1].replace(":", "-")
-            if portable.is_dir() and any(portable.glob("*.onnx")):
+            portable = _portable_dir(cache_dir, model_name)
+            if any(portable.glob("*.onnx")):
                 specific_path = str(portable)
+            else:
+                downloaded = True  # 本次构造将触发下载
         self._model = TextEmbedding(
             model_name, cache_dir=cache_dir, specific_model_path=specific_path
         )
+        if downloaded and cache_dir:
+            _materialize_portable(cache_dir, model_name)
         self._batch = batch_size
         self.backend_id = "fe-" + model_name.split("/")[-1].replace(":", "-")
 
