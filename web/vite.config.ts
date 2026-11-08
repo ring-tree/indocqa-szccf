@@ -1,0 +1,16 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+// API 代理目标可经环境变量覆盖，便于多实例并行（如 VITE_API_TARGET=http://localhost:8010）
+const apiTarget = process.env.VITE_API_TARGET ?? "http://localhost:8000";
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: Number(process.env.VITE_PORT ?? 5173),
+    proxy: {
+      "/api": apiTarget,
+    },
+    host: true,
+  },
+});

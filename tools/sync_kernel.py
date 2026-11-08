@@ -1,9 +1,10 @@
-"""内核同步：从检索问答服务的源仓库同步内核代码与语料到本仓库，保证本仓库自包含可复现。
+"""内核同步：从检索问答服务的源仓库同步服务端代码到本仓库，保证本仓库自包含可复现。
 
 用法：
-    python tools/sync_kernel.py --src ../indocqa-tencent
+    python tools/sync_kernel.py --src <检索问答服务源仓库路径>
 
-同步内容：server/（代码，排除运行时数据）、data/corpus/、data/terms/
+只同步 server/ 代码（排除运行时数据与测试——语料、术语种子、测试用例
+与本仓库的领域语料强绑定，由本仓库自行维护，不参与同步）。
 同步后本仓库即可独立运行：python -m app.indexing.ingest ../data/corpus（在 server/ 下）
 """
 
@@ -13,9 +14,7 @@ import shutil
 import sys
 
 SYNC_DIRS = {
-    "server": ("server", {"data", ".pytest_cache", ".venv"}),
-    "data/corpus": ("data/corpus", set()),
-    "data/terms": ("data/terms", set()),
+    "server": ("server", {"data", ".pytest_cache", ".venv", "tests"}),
 }
 EXCLUDE_FILES = {".env", ".env.local", "sources.md~"}
 
