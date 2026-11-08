@@ -101,6 +101,12 @@ flowchart LR
 3. **嵌入三通道 + 显式开关**：`local`（进程内 fastembed，权重在项目 `models/`，随项目分发）/ `ollama`（质量最优）/ `minilm` 兜底 / `auto` 自动探测
 4. **fixed/adaptive 是运行时开关而非两套代码**：对照组与实验组共享全部代码路径，差异只在策略参数，基线对比才可信
 
+## 嵌入模型调用模式
+
+四个模式是"模型从哪来、谁来推理"的四种方案（`server/.env` 中 `INDOCQA_EMBED_BACKEND` 显式选择）：`local`（进程内直调项目 `models/` 权重，克隆即含默认模型、完全离线，~6ms）、`ollama`（本机 Ollama 服务，质量最优：bge-m3 下 Recall 100%/多跳 73%，~700ms）、`minilm`（内置兜底）、`auto`（探测 Ollama 运行则用之，否则落 local）。
+
+`models/` 目录两种布局：**便携布局** `models/<模型短名>/`（真实权重文件，随 git 分发，加载优先级最高）；**缓存布局** `models/models--*/`（hf_hub 下载缓存，软链接结构不入 git，切换到未分发模型时经镜像自动下载）。`local` 是可插拔槽位——`INDOCQA_EMBED_LOCAL_MODEL` 可指到 e5-large（实测 95%，配 `INDOCQA_EMBED_LOCAL_BATCH=8`）等模型，完整对比见评测报告附录。
+
 ## 快速部署与实验复现
 
 检索服务内核已随仓库自带（`server/` 源码 + 语料 + 术语簇 + Web 前端），自包含可复现。
@@ -163,7 +169,7 @@ web/      React + TypeScript + Vite 前端（问答/文档管理/执行链；代
 eval/     评测集 dataset.jsonl（40 题）与三配置对比 harness
 assets/   术语表种子
 docs/     系统文档、基线对比评测报告、界面截图
-models/   本地嵌入模型权重（首次运行自动下载，随项目分发）
+models/   本地嵌入模型权重（便携布局随 git 分发；hf 下载缓存不入库）
 data/     语料与向量库持久化目录
 tools/    sync_kernel.py 内核同步脚本（--src 参数化）
 ```

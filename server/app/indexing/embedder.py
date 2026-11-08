@@ -35,22 +35,31 @@ class BaseEmbedder:
 class LocalEmbedder(BaseEmbedder):
     """fastembed 进程内推理：模型一次加载常驻，查询毫秒级。
 
+    模型文件两种形态（均在项目 models/ 目录下）：
+    - 便携布局 `models/<模型短名>/`（真实权重文件，随 git 分发，克隆即用、完全离线）
+    - 缓存布局 `models/models--*/`（hf_hub 下载缓存，首次用到未随仓库分发的模型时
+      经镜像自动下载至此，含软链接与锁文件，不入 git）
     批量控制在 embed() 调用侧（fastembed 0.9 构造函数不接受 batch_size，
     其默认 256 条批量在 CPU 上对大模型会触发数 GB 注意力缓冲分配失败）。
     """
 
     def __init__(self, model_name: str, batch_size: int = 32, cache_dir: str | None = None):
-        # 模型权重固定存放在项目内 models/ 目录（随项目打包分发，不依赖项目外缓存）；
-        # 首次使用时经 HF 镜像下载，此后完全离线
         import os
         import pathlib
 
         os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
         from fastembed import TextEmbedding
 
+        specific_path = None
         if cache_dir:
             pathlib.Path(cache_dir).mkdir(parents=True, exist_ok=True)
-        self._model = TextEmbedding(model_name, cache_dir=cache_dir)
+            # 便携布局优先：目录内含 onnx 权重即视为完整模型，免下载直接加载
+            portable = pathlib.Path(cache_dir) / model_name.split("/")[-1].replace(":", "-")
+            if portable.is_dir() and any(portable.glob("*.onnx")):
+                specific_path = str(portable)
+        self._model = TextEmbedding(
+            model_name, cache_dir=cache_dir, specific_model_path=specific_path
+        )
         self._batch = batch_size
         self.backend_id = "fe-" + model_name.split("/")[-1].replace(":", "-")
 
