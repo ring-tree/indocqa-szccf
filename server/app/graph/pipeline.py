@@ -106,7 +106,9 @@ def _scope(settings, folder: str | None = None, folders: list[str] | None = None
     names = []
     for info in docs.values():
         doc_folder = info.get("folder") or ""
-        if scopes and doc_folder not in scopes:
+        if scopes and not any(
+            doc_folder == scope or doc_folder.startswith(scope + "/") for scope in scopes
+        ):
             continue
         if info.get("filename"):
             names.append(info["filename"])

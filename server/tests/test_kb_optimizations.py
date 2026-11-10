@@ -55,17 +55,13 @@ def test_multi_folder_scope_search(tmp_settings, tmp_path):
         "MTBF 8000 小时",
         top_k=6,
         settings=tmp_settings,
-        folders=["设备手册/螺杆", "评测夹具"],
+        folders=["设备手册", "评测夹具"],
     )
     assert hits
     assert all(h.folder in {"设备手册/螺杆", "评测夹具"} for h in hits)
     assert any(h.doc_name == "b.md" for h in hits)
 
-    # 检索范围按所选目录精确匹配：选中父目录不再自动包含子目录
-    assert search("LUB 4000 小时", top_k=6, settings=tmp_settings, folders=["设备手册"]) == []
-    assert search("0.8 MPa", top_k=6, settings=tmp_settings, folders=["行业标准"]) == []
-
-    only_c = search("0.8 MPa", top_k=6, settings=tmp_settings, folders=["行业标准/储气"])
+    only_c = search("0.8 MPa", top_k=6, settings=tmp_settings, folders=["行业标准"])
     assert only_c and all(h.folder == "行业标准/储气" for h in only_c)
 
 
@@ -271,6 +267,73 @@ def test_batch_move_reports_missing_documents(tmp_settings, tmp_path):
     result = batch_move(tmp_settings, [doc_id, "missing-doc"], "设备手册/无油空压机")
     assert result["moved"] == [doc_id]
     assert result["failed"] == [{"docId": "missing-doc", "reason": "文档不存在"}]
+
+
+def test_create_folder_creates_all_levels(tmp_settings):
+    import asyncio
+
+    from app.api.kb import FolderCreate, create_folder
+
+    asyncio.run(create_folder(FolderCreate(path="一级/二级/三级/四级")))
+    folders = Manifest(Manifest.path_for(tmp_settings)).folders()
+    for path in ("一级", "一级/二级", "一级/二级/三级", "一级/二级/三级/四级"):
+        assert path in folders
+
+
+def test_delete_folder_structure_up_keeps_children(tmp_settings, tmp_path):
+    import asyncio
+
+    from app.api.kb import delete_folder
+
+    first = ingest_file(
+        _md(tmp_path / "s1.md", "S1", "LUB 4000 小时。"), tmp_settings, folder="事业部/设备/螺杆"
+    )["docId"]
+    second = ingest_file(
+        _md(tmp_path / "s2.md", "S2", "MTBF 8000 小时。"), tmp_settings, folder="事业部/设备/无油"
+    )["docId"]
+
+    asyncio.run(delete_folder("事业部/设备", mode="move"))
+    manifest = Manifest(Manifest.path_for(tmp_settings))
+    assert manifest.get(first)["folder"] == "事业部/螺杆"
+    assert manifest.get(second)["folder"] == "事业部/无油"
+    folders = manifest.folders()
+    assert "事业部/设备" not in folders
+    assert "事业部/螺杆" in folders and "事业部/无油" in folders
+
+
+def test_delete_folder_structure_up_at_root(tmp_settings, tmp_path):
+    import asyncio
+
+    from app.api.kb import delete_folder
+
+    doc_id = ingest_file(
+        _md(tmp_path / "r.md", "R", "LUB 4000 小时。"), tmp_settings, folder="设备手册/螺杆"
+    )["docId"]
+
+    asyncio.run(delete_folder("设备手册", mode="move"))
+    manifest = Manifest(Manifest.path_for(tmp_settings))
+    assert manifest.get(doc_id)["folder"] == "螺杆"
+    assert "设备手册" not in manifest.folders()
+    assert "螺杆" in manifest.folders()
+
+
+def test_delete_folder_cascade_removes_subtree(tmp_settings, tmp_path):
+    import asyncio
+
+    from app.api.kb import delete_folder
+
+    ingest_file(
+        _md(tmp_path / "c1.md", "C1", "LUB 4000 小时。"), tmp_settings, folder="事业部/设备/螺杆"
+    )
+    ingest_file(
+        _md(tmp_path / "c2.md", "C2", "MTBF 8000 小时。"), tmp_settings, folder="事业部/设备/无油"
+    )
+
+    asyncio.run(delete_folder("事业部/设备", mode="delete"))
+    manifest = Manifest(Manifest.path_for(tmp_settings))
+    assert manifest.documents() == {}
+    folders = manifest.folders()
+    assert not any(item == "事业部/设备" or item.startswith("事业部/设备/") for item in folders)
 
 
 def test_ingest_to_non_leaf_rejected(tmp_settings, tmp_path):

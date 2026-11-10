@@ -161,7 +161,7 @@ def query(
 ) -> list[dict]:
     """返回 [{"sim", "text", "doc_id", ...}]；相似度 = 1 - 余弦距离。
 
-    folder/folders 非空时只召回这些目录（精确匹配，不自动包含子目录）的块。
+    folder/folders 非空时只召回这些目录子树（含自身）的块。
     """
     from app.indexing.folders import scope_paths
 

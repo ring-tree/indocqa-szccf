@@ -306,20 +306,59 @@ def _delete_folder_sync(settings, folder: str, mode: str) -> dict:
             raise DocumentNotFoundError(f"目录不存在: {folder}")
         moved_or_deleted = 0
         if mode == "move":
-            destination = parent_of(folder) or DEFAULT_FOLDER
-            if docs:
-                folders = manifest.folders()
-                other_children = [
-                    item
-                    for item in folders
-                    if item.startswith(destination + "/") and not is_within(item, folder)
-                ]
-                if other_children:
-                    raise ParamError("父目录仍包含其他子目录，请先把文档移动到末级目录后再删除")
-            for doc_id in docs:
-                store.update_doc_folder(settings, doc_id, destination)
-                manifest.set_doc_folder(doc_id, destination)
-                moved_or_deleted += 1
+            folders = manifest.folders()
+            children = [item for item in folders if item.startswith(folder + "/")]
+            direct_docs = [
+                doc_id
+                for doc_id, info in manifest.documents().items()
+                if (info.get("folder") or DEFAULT_FOLDER) == folder
+            ]
+            parent = parent_of(folder)
+            if children:
+                if direct_docs:
+                    raise ParamError("目录同时包含子目录与文档，无法结构上移；请选择级联删除")
+                if parent:
+                    parent_has_docs = any(
+                        (info.get("folder") or DEFAULT_FOLDER) == parent
+                        for info in manifest.documents().values()
+                    )
+                    if parent_has_docs:
+                        raise ParamError(f"「{parent}」下已有文档，无法结构上移；请选择级联删除")
+                for doc_id in docs:
+                    info = manifest.get(doc_id) or {}
+                    old = info.get("folder") or DEFAULT_FOLDER
+                    suffix = old[len(folder) :].strip("/")
+                    new_folder = (
+                        f"{parent}/{suffix}"
+                        if parent and suffix
+                        else (suffix or parent or DEFAULT_FOLDER)
+                    )
+                    store.update_doc_folder(settings, doc_id, new_folder)
+                    manifest.set_doc_folder(doc_id, new_folder)
+                    moved_or_deleted += 1
+                for item in children:
+                    suffix = item[len(folder) :].strip("/")
+                    new_item = f"{parent}/{suffix}" if parent and suffix else (suffix or parent)
+                    manifest.remove_folder(item)
+                    if new_item:
+                        manifest.ensure_folder(new_item)
+                if parent:
+                    for item in ancestors(parent):
+                        manifest.ensure_folder(item)
+            else:
+                destination = parent or DEFAULT_FOLDER
+                if docs:
+                    other_children = [
+                        item
+                        for item in folders
+                        if item.startswith(destination + "/") and not is_within(item, folder)
+                    ]
+                    if other_children:
+                        raise ParamError("父目录仍包含其他子目录，请先把文档移动到末级目录后再删除")
+                for doc_id in docs:
+                    store.update_doc_folder(settings, doc_id, destination)
+                    manifest.set_doc_folder(doc_id, destination)
+                    moved_or_deleted += 1
         else:
             for doc_id in docs:
                 info = manifest.get(doc_id) or {}

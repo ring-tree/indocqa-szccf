@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { ConfirmModal, PromptModal } from "../components/Dialogs";
+import { ChoiceModal, ConfirmModal, PromptModal } from "../components/Dialogs";
 import ModelPicker from "../components/ModelPicker";
 import {
   batchMoveDocuments,
@@ -712,6 +712,7 @@ function DocsView({ className = "", onChanged }: Props) {
       await createFolder(path);
       await refresh();
       setActiveFolder(path);
+      revealFolder(path);
       setMessage(`已创建目录 ${path}`);
       return path;
     } catch (e) {
@@ -746,6 +747,7 @@ function DocsView({ className = "", onChanged }: Props) {
         await renameFolder(folderForm.source, path);
         await refresh();
         setActiveFolder(path);
+        revealFolder(path);
         setMessage(`已重命名为 ${path}`);
       }
       setFolderForm(null);
@@ -762,16 +764,26 @@ function DocsView({ className = "", onChanged }: Props) {
     setDeleteFolderPath(activeFolder);
   }
 
-  async function confirmDeleteFolder() {
+  function closeDeleteFolder() {
+    if (actionBusy) return;
+    setDeleteFolderPath(null);
+    setActionError("");
+  }
+
+  async function confirmDeleteFolder(mode: "move" | "delete") {
     if (!deleteFolderPath || actionBusy) return;
     setActionBusy(true);
     setActionError("");
     try {
-      await deleteFolder(deleteFolderPath, "move");
+      await deleteFolder(deleteFolderPath, mode);
       setDeleteFolderPath(null);
       await refresh();
       setActiveFolder("");
-      setMessage("目录已删除，文档已移动到上级目录");
+      setMessage(
+        mode === "delete"
+          ? "目录及其文档已删除"
+          : "目录已删除，原有结构已上移到上级目录",
+      );
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "删除失败");
     } finally {
@@ -851,6 +863,31 @@ function DocsView({ className = "", onChanged }: Props) {
 
   function hasChildren(path: string) {
     return folders.some((f) => f.path.startsWith(path + "/"));
+  }
+
+  function toggleFolder(path: string) {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+
+  function revealFolder(path: string) {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      const parts = path.split("/");
+      for (let index = 1; index < parts.length; index += 1) {
+        next.delete(parts.slice(0, index).join("/"));
+      }
+      return next;
+    });
+  }
+
+  function onFolderClick(path: string) {
+    setActiveFolder(path);
+    if (hasChildren(path)) toggleFolder(path);
   }
 
   async function submitMove() {
@@ -1194,6 +1231,13 @@ function DocsView({ className = "", onChanged }: Props) {
   const batchBusy =
     batchAi?.phase === "computing" || batchAi?.phase === "applying";
   const allSelected = filtered.length > 0 && filtered.every((d) => selected.has(d.docId));
+  const deleteFolderChildren = deleteFolderPath
+    ? folders.filter((item) => item.path.startsWith(deleteFolderPath + "/")).length
+    : 0;
+  const deleteFolderDocs = deleteFolderPath
+    ? (folders.find((item) => item.path === deleteFolderPath)?.documentCount ?? 0)
+    : 0;
+  const deleteFolderHasContent = deleteFolderChildren > 0 || deleteFolderDocs > 0;
 
   function toggleSelect(docId: string) {
     setSelected((current) => {
@@ -1348,6 +1392,7 @@ function DocsView({ className = "", onChanged }: Props) {
                         setDropTarget((current) => (current?.path === f.path ? null : current))
                       }
                       onDrop={(e) => onFolderDrop(e, f.path)}
+                      onClick={() => onFolderClick(f.path)}
                       className={`ui-folder-row ${
                         target ? (target.valid ? "is-drop-target" : "is-drop-invalid") : ""
                       }`}
@@ -1356,20 +1401,15 @@ function DocsView({ className = "", onChanged }: Props) {
                         type="button"
                         className="ui-folder-arrow"
                         aria-label={isCollapsed ? `展开 ${f.name}` : `折叠 ${f.name}`}
-                        onClick={() =>
-                          setCollapsed((current) => {
-                            const next = new Set(current);
-                            if (next.has(f.path)) next.delete(f.path);
-                            else next.add(f.path);
-                            return next;
-                          })
-                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleFolder(f.path);
+                        }}
                       >
                         {canExpand ? (isCollapsed ? "▸" : "▾") : ""}
                       </button>
                       <button
                         type="button"
-                        onClick={() => setActiveFolder(f.path)}
                         style={{ paddingLeft: 4 + depth * 12 }}
                         className={`ui-folder-item ${activeFolder === f.path ? "is-active" : ""}`}
                         title={
@@ -1780,21 +1820,45 @@ function DocsView({ className = "", onChanged }: Props) {
       />
 
       <ConfirmModal
-        open={deleteFolderPath !== null}
-        title={`删除目录「${deleteFolderPath ?? ""}」？`}
+        open={deleteFolderPath !== null && !deleteFolderHasContent}
+        title={`删除空目录「${deleteFolderPath ?? ""}」？`}
         confirmText="确认删除"
         danger
         busy={actionBusy}
         error={actionError}
-        onCancel={() => {
-          if (actionBusy) return;
-          setDeleteFolderPath(null);
-          setActionError("");
-        }}
-        onConfirm={() => void confirmDeleteFolder()}
+        onCancel={closeDeleteFolder}
+        onConfirm={() => void confirmDeleteFolder("move")}
       >
-        目录中的文档将移动到上级目录；若上级仍包含其他子目录，操作会被拒绝。
+        该目录为空，删除后不可恢复。
       </ConfirmModal>
+
+      <ChoiceModal
+        open={deleteFolderPath !== null && deleteFolderHasContent}
+        title={`删除目录「${deleteFolderPath ?? ""}」？`}
+        busy={actionBusy}
+        error={actionError}
+        onCancel={closeDeleteFolder}
+        actions={[
+          { label: "取消", tone: "ghost", onClick: closeDeleteFolder },
+          {
+            label: "级联删除",
+            tone: "danger",
+            onClick: () => void confirmDeleteFolder("delete"),
+          },
+          {
+            label: "结构上移",
+            tone: "primary",
+            onClick: () => void confirmDeleteFolder("move"),
+          },
+        ]}
+      >
+        <p>
+          该目录包含 {deleteFolderChildren} 个子目录、{deleteFolderDocs} 份文档。
+        </p>
+        <p>
+          结构上移：保留子目录层级，将内容移动到上级目录；级联删除：同时删除全部子目录与文档，不可恢复。
+        </p>
+      </ChoiceModal>
 
       <ConfirmModal
         open={deleteDoc !== null}

@@ -1138,6 +1138,8 @@ button,
   align-items: center;
   gap: 2px;
   border-radius: 0.5rem;
+  padding: 1px 0;
+  cursor: pointer;
 }
 .ui-folder-row.is-drop-target {
   background: var(--brand-soft);
@@ -1152,11 +1154,15 @@ button,
   width: auto;
 }
 .ui-folder-arrow {
-  width: 16px;
+  width: 22px;
+  min-height: 1.95rem;
   flex-shrink: 0;
   color: var(--muted);
   font-size: 10px;
   text-align: center;
+}
+.ui-folder-row:hover .ui-folder-arrow {
+  color: var(--ink);
 }
 .ui-drop-chip {
   margin-right: 4px;

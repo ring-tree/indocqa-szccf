@@ -84,7 +84,6 @@ interface PromptProps {
   onCancel: () => void;
   onSubmit: (value: string) => void;
 }
-
 /** 应用内输入弹窗：替代 window.prompt，支持 Enter 提交与 Esc 取消。 */
 export function PromptModal({
   open,
@@ -163,6 +162,89 @@ export function PromptModal({
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+export interface ChoiceAction {
+  label: string;
+  tone?: "ghost" | "primary" | "danger";
+  onClick: () => void;
+}
+
+const TONE_CLASS: Record<NonNullable<ChoiceAction["tone"]>, string> = {
+  ghost: "ui-btn-ghost",
+  primary: "ui-btn-primary",
+  danger: "ui-btn-danger",
+};
+
+interface ChoiceProps {
+  open: boolean;
+  title: string;
+  children?: ReactNode;
+  actions: ChoiceAction[];
+  busy?: boolean;
+  error?: string;
+  onCancel: () => void;
+}
+
+/** 多选项确认弹窗：用于删除目录时选择“结构上移 / 级联删除”。 */
+export function ChoiceModal({
+  open,
+  title,
+  children,
+  actions,
+  busy = false,
+  error = "",
+  onCancel,
+}: ChoiceProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busy) onCancel();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, busy, onCancel]);
+
+  if (!open) return null;
+  return (
+    <div className="ui-modal-backdrop" role="presentation" onClick={busy ? undefined : onCancel}>
+      <div
+        ref={dialogRef}
+        className="ui-modal ui-confirm"
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="ui-modal-head">
+          <h3>{title}</h3>
+        </div>
+        {children && <div className="ui-dialog-text">{children}</div>}
+        {error && <p className="ui-form-error">{error}</p>}
+        {busy && <p className="ui-confirm-hint">处理中…</p>}
+        <div className="ui-modal-actions">
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              className={`ui-btn ${TONE_CLASS[action.tone ?? "ghost"]}`}
+              disabled={busy}
+              onClick={action.onClick}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
