@@ -47,6 +47,7 @@
   --radius-lg: 1.1rem;
   --radius-xl: 1.4rem;
   --reading-width: 80%;
+  --composer-width: 60%;
   --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
 }
@@ -2096,7 +2097,8 @@ button,
 
 .ui-composer > .ui-composer-shell {
   width: 100%;
-  max-width: var(--reading-width);
+  max-width: var(--composer-width);
+  min-width: min(100%, 15rem);
   margin-inline: auto;
 }
 
@@ -2603,4 +2605,27 @@ button,
   display: none;
   width: 0;
   height: 0;
+}
+
+/* ---- 60% composer controls at narrow widths ---- */
+.ui-composer-shell .ui-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.ui-composer-shell .ui-model-picker,
+.ui-composer-shell .ui-model-pill {
+  min-width: 0;
+}
+
+@media (max-width: 1024px) {
+  .ui-composer-shell .ui-counter {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .ui-composer-shell .ui-model-pill-label {
+    display: none;
+  }
 }
