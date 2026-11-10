@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Message from "../components/Message";
 import ModelPicker from "../components/ModelPicker";
 import {
@@ -21,6 +21,15 @@ interface Props {
 }
 
 const SCOPE_KEY = "indocqa-scope-paths";
+
+function readStoredScope(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SCOPE_KEY) ?? "[]");
+    return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 const ERROR_HINT: Record<number, string> = {
   40001: "请求参数不合法，请检查问题或检索范围",
@@ -84,17 +93,10 @@ function ChatView({
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [profile, setProfile] = useState("");
   const [folders, setFolders] = useState<KBFolder[]>([]);
-  const [scopePaths, setScopePaths] = useState<string[]>(() => {
-    try {
-      const raw = JSON.parse(localStorage.getItem(SCOPE_KEY) ?? "[]");
-      return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
-    } catch {
-      return [];
-    }
-  });
+  const [scopePaths, setScopePaths] = useState<string[]>(readStoredScope);
   const [scopeOpen, setScopeOpen] = useState(false);
   const scopeRef = useRef<HTMLDivElement>(null);
-  const scopeTouchedRef = useRef(false);
+  const scopeTouchedRef = useRef(scopePaths.length > 0);
   const [notice, setNotice] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -165,6 +167,19 @@ function ChatView({
     setScopePaths(allSelected ? [] : folders.map((item) => item.path));
   }
 
+  const restoreAllIfEmpty = useCallback(() => {
+    // 未选择任何目录等价于全库检索；面板开合时恢复全选，保持与后端一致
+    if (scopePaths.length === 0 && folders.length > 0) {
+      setScopePaths(folders.map((item) => item.path));
+      scopeTouchedRef.current = false;
+    }
+  }, [scopePaths, folders]);
+
+  function toggleScopePanel() {
+    restoreAllIfEmpty();
+    setScopeOpen(!scopeOpen);
+  }
+
   function renderScopeNodes(parent: string, depth: number): ReactNode[] {
     return childrenOf(parent).flatMap((item) => [
       <label
@@ -210,12 +225,9 @@ function ChatView({
       .then((list) => {
         setFolders(list);
         setScopePaths((current) => {
-          const valid = current.filter((p) => list.some((f) => f.path === p));
-          // 默认全选：首次加载或未发生用户操作时，所有目录保持选中
-          if (!scopeTouchedRef.current && valid.length === 0) {
-            return list.map((f) => f.path);
-          }
-          return valid;
+          // 未发生用户操作时保持默认全选（包含新增目录）
+          if (!scopeTouchedRef.current) return list.map((f) => f.path);
+          return current.filter((p) => list.some((f) => f.path === p));
         });
       })
       .catch(() => setFolders([]));
@@ -232,11 +244,8 @@ function ChatView({
       .then((list) => {
         setFolders(list);
         setScopePaths((current) => {
-          const valid = current.filter((p) => list.some((f) => f.path === p));
-          if (!scopeTouchedRef.current && valid.length === 0) {
-            return list.map((f) => f.path);
-          }
-          return valid;
+          if (!scopeTouchedRef.current) return list.map((f) => f.path);
+          return current.filter((p) => list.some((f) => f.path === p));
         });
       })
       .catch(() => setFolders([]));
@@ -244,11 +253,15 @@ function ChatView({
 
   useEffect(() => {
     if (!scopeOpen) return;
+    const close = () => {
+      restoreAllIfEmpty();
+      setScopeOpen(false);
+    };
     const onPointerDown = (event: PointerEvent) => {
-      if (!scopeRef.current?.contains(event.target as Node)) setScopeOpen(false);
+      if (!scopeRef.current?.contains(event.target as Node)) close();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setScopeOpen(false);
+      if (event.key === "Escape") close();
     };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -256,7 +269,7 @@ function ChatView({
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [scopeOpen]);
+  }, [scopeOpen, restoreAllIfEmpty]);
 
   useEffect(() => {
     if (activeId === currentRef.current) return;
@@ -521,7 +534,7 @@ function ChatView({
                 aria-haspopup="dialog"
                 aria-expanded={scopeOpen}
                 aria-controls="scope-popover"
-                onClick={() => setScopeOpen((open) => !open)}
+                onClick={toggleScopePanel}
               >
                 <span className="ui-scope-label">检索范围</span>
                 <span className="ui-scope-value">{scopeLabel}</span>
