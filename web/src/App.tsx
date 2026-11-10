@@ -22,6 +22,7 @@ const SIDEBAR_MAX = 520;
 const SIDEBAR_DEFAULT = 272;
 const SIDEBAR_STEP = 16;
 const SIDEBAR_KEY = "indocqa-sidebar-width";
+const THEME_KEY = "indocqa-theme-v2";
 
 function clampSidebarWidth(value: number) {
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(value)));
@@ -51,7 +52,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [kb, setKb] = useState<{ documents: number; chunks: number } | null>(null);
   const [theme, setTheme] = useState<Theme>(() =>
-    localStorage.getItem("indocqa-theme") === "dark" ? "dark" : "light",
+    localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark",
   );
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const stored = Number(localStorage.getItem(SIDEBAR_KEY));
@@ -194,8 +195,8 @@ export default function App() {
     document.documentElement.style.colorScheme = theme;
     document
       .querySelector('meta[name="theme-color"]')
-      ?.setAttribute("content", theme === "dark" ? "#070d18" : "#edf3f8");
-    localStorage.setItem("indocqa-theme", theme);
+      ?.setAttribute("content", theme === "dark" ? "#060d17" : "#f2f6fa");
+    localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
   useEffect(() => {

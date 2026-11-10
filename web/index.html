@@ -1,10 +1,24 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f8fafc" />
+    <meta name="theme-color" content="#060d17" />
     <meta name="description" content="工阅 IndocQA：基于已入库文档的可追溯智能问答" />
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("indocqa-theme-v2");
+          var theme = stored === "light" ? "light" : "dark";
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", theme === "dark" ? "#060d17" : "#f2f6fa");
+        } catch (e) {
+          /* 忽略隐私模式下的 localStorage 异常 */
+        }
+      })();
+    </script>
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231e293b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='18' fill='white'%3EI%3C/text%3E%3C/svg%3E"

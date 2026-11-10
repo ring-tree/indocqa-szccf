@@ -1969,10 +1969,17 @@ button,
 
 /* ---- Mode bar & scope ---- */
 .ui-modebar {
+  position: relative;
+  z-index: 30;
   background: color-mix(in srgb, var(--surface) 84%, transparent);
   border-bottom-color: color-mix(in srgb, var(--line) 82%, transparent);
   padding-inline: clamp(1rem, 3vw, 2rem);
   backdrop-filter: blur(12px) saturate(140%);
+}
+
+.ui-message-area {
+  position: relative;
+  z-index: 0;
 }
 
 .ui-mode-group {
@@ -2039,6 +2046,7 @@ button,
 
 .ui-empty-hero {
   position: relative;
+  z-index: 0;
   overflow: hidden;
   border-color: color-mix(in srgb, var(--line) 82%, transparent);
   background:
@@ -2077,10 +2085,12 @@ button,
 }
 
 .ui-composer {
-  border-top-color: color-mix(in srgb, var(--line) 82%, transparent);
-  background: color-mix(in srgb, var(--surface) 86%, transparent);
-  box-shadow: 0 -18px 40px -36px rgba(13, 27, 42, 0.5);
-  backdrop-filter: blur(16px) saturate(140%);
+  position: relative;
+  z-index: 20;
+  border-top: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .ui-composer > .ui-composer-shell {
@@ -2093,7 +2103,9 @@ button,
   border-color: var(--line);
   border-radius: 1.15rem;
   background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  box-shadow:
+    0 18px 44px -30px rgba(13, 27, 42, 0.55),
+    var(--shadow-sm);
 }
 
 .ui-composer-shell:focus-within {
@@ -2452,3 +2464,124 @@ button,
   }
 }
 
+
+/* ---- Themed scrollbars ---- */
+.ui-sidebar ul {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--sidebar-muted) 32%, transparent) transparent;
+}
+
+.ui-sidebar ul::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ui-sidebar ul::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ui-sidebar ul::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sidebar-muted) 34%, transparent);
+  background-clip: content-box;
+}
+
+.ui-sidebar ul::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--sidebar-muted) 55%, transparent);
+  background-clip: content-box;
+}
+
+.ui-docs-view,
+.ui-modal,
+.ui-scope-popover,
+.ui-picker-list,
+.ui-plan-tree-wrap,
+.ui-table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 30%, transparent) transparent;
+}
+
+.ui-docs-view::-webkit-scrollbar,
+.ui-modal::-webkit-scrollbar,
+.ui-scope-popover::-webkit-scrollbar,
+.ui-picker-list::-webkit-scrollbar,
+.ui-plan-tree-wrap::-webkit-scrollbar,
+.ui-table-wrap::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ui-docs-view::-webkit-scrollbar-track,
+.ui-modal::-webkit-scrollbar-track,
+.ui-scope-popover::-webkit-scrollbar-track,
+.ui-picker-list::-webkit-scrollbar-track,
+.ui-plan-tree-wrap::-webkit-scrollbar-track,
+.ui-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ui-docs-view::-webkit-scrollbar-thumb,
+.ui-modal::-webkit-scrollbar-thumb,
+.ui-scope-popover::-webkit-scrollbar-thumb,
+.ui-picker-list::-webkit-scrollbar-thumb,
+.ui-plan-tree-wrap::-webkit-scrollbar-thumb,
+.ui-table-wrap::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 32%, transparent);
+  background-clip: content-box;
+}
+
+.ui-docs-view::-webkit-scrollbar-thumb:hover,
+.ui-modal::-webkit-scrollbar-thumb:hover,
+.ui-scope-popover::-webkit-scrollbar-thumb:hover,
+.ui-picker-list::-webkit-scrollbar-thumb:hover,
+.ui-plan-tree-wrap::-webkit-scrollbar-thumb:hover,
+.ui-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 48%, transparent);
+  background-clip: content-box;
+}
+
+/* ---- Light theme parity ---- */
+:root:not([data-theme="dark"]) .ui-empty-hero {
+  background:
+    radial-gradient(
+      circle at 50% -24%,
+      color-mix(in srgb, var(--brand) 9%, #ffffff),
+      transparent 58%
+    ),
+    linear-gradient(180deg, #ffffff 0%, #f4fbf9 100%);
+}
+
+:root:not([data-theme="dark"]) .ui-docs-view > div > .ui-card:first-child {
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      color-mix(in srgb, var(--brand) 7%, #ffffff),
+      transparent 52%
+    ),
+    var(--surface);
+}
+
+:root:not([data-theme="dark"]) .ui-stat::before {
+  opacity: 0.7;
+}
+
+:root:not([data-theme="dark"]) .ui-card,
+:root:not([data-theme="dark"]) .ui-stat,
+:root:not([data-theme="dark"]) .ui-table-wrap,
+:root:not([data-theme="dark"]) .ui-folder-panel {
+  border-color: #d8e4ee;
+}
+
+.ui-sidebar ul::-webkit-scrollbar-button,
+.ui-docs-view::-webkit-scrollbar-button,
+.ui-modal::-webkit-scrollbar-button,
+.ui-scope-popover::-webkit-scrollbar-button,
+.ui-picker-list::-webkit-scrollbar-button,
+.ui-plan-tree-wrap::-webkit-scrollbar-button,
+.ui-table-wrap::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
