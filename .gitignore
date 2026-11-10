@@ -18,6 +18,9 @@ eval/results/raw/
 # 内核同步副本的运行时生成物
 server/data/chroma/
 server/data/cache/
+server/data/uploads/
+server/data/db/
+server/data/sessions.db*
 # 模型目录：便携布局 models/<模型短名>/（真实权重）随仓库分发；
 # 仅忽略下载过程中的瞬态 hf 缓存布局（含软链接；下载完成即自动归位平铺并清理）
 models/models--*/
@@ -36,3 +39,16 @@ web/dist/
 
 # 前端依赖（本地安装）
 web/node_modules/
+
+# TS 增量构建产物
+*.tsbuildinfo
+
+# Chroma 单写锁
+**/data/.chroma-write.lock
+
+# Vite 临时配置
+*.timestamp-*.mjs
+
+# 本地交付文档（不入库）
+docs/知识构建过程说明.md
+docs/系统设计文档.md
