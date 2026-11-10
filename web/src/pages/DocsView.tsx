@@ -573,15 +573,18 @@ function DocsView({ className = "", onChanged }: Props) {
     setConfirmError("");
     try {
       const result = await batchMoveDocuments(confirmMove.ids, confirmMove.target);
-      if (confirmMove.suggested && confirmMove.ids.length === 1) {
-        await sendClassifyFeedback({
-          docId: confirmMove.ids[0],
-          suggested: confirmMove.suggested,
-          chosen: confirmMove.target,
-          action: confirmMove.suggested === confirmMove.target ? "accept" : "adjust",
-          source: "doc",
-        });
-      }
+      const feedback = confirmMove.suggested && confirmMove.ids.length === 1
+        ? {
+            docId: confirmMove.ids[0],
+            suggested: confirmMove.suggested,
+            chosen: confirmMove.target,
+            action:
+              confirmMove.suggested === confirmMove.target
+                ? ("accept" as const)
+                : ("adjust" as const),
+            source: "doc",
+          }
+        : null;
       setConfirmMove(null);
       setSelected(new Set());
       if (result.operationId) {
@@ -592,6 +595,10 @@ function DocsView({ className = "", onChanged }: Props) {
           ? `已移动 ${result.moved.length} 份，失败 ${result.failed.length} 份`
           : `已移动 ${result.moved.length} 份文档到 ${confirmMove.target}`,
       );
+      if (feedback) {
+        // 反馈失败不影响已完成的移动
+        void sendClassifyFeedback(feedback).catch(() => undefined);
+      }
       await refresh();
     } catch (e) {
       setConfirmError(e instanceof Error ? e.message : "移动失败");
@@ -893,21 +900,26 @@ function DocsView({ className = "", onChanged }: Props) {
                 <button
                   type="button"
                   className="ui-btn ui-btn-sm ui-btn-primary"
-                  onClick={() =>
+                  onClick={() => {
+                    const sources = new Set(
+                      [...selected].map(
+                        (id) => docs.find((d) => d.docId === id)?.folder || DEFAULT_FOLDER,
+                      ),
+                    );
                     setPicker({
                       title: "批量移动文档",
                       value: activeFolder,
                       onPick: (path) => {
                         setConfirmMove({
                           ids: [...selected],
-                          source: activeFolder || DEFAULT_FOLDER,
+                          source: sources.size === 1 ? [...sources][0] : "多个目录",
                           target: path,
                         });
                         setConfirmError("");
                         setPicker(null);
                       },
-                    })
-                  }
+                    });
+                  }}
                 >
                   移动到…
                 </button>
