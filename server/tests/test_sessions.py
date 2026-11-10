@@ -118,8 +118,27 @@ def test_cleanup_removes_sessions_older_than_ttl(tmp_path):
     session_store.create_session(db, "旧会话", "oldsession001")
     old = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 8 * 86400))
     con = sqlite3.connect(db)
-    con.execute("UPDATE sessions SET created_at=? WHERE id=?", (old, "oldsession001"))
+    con.execute(
+        "UPDATE sessions SET created_at=?, updated_at=? WHERE id=?",
+        (old, old, "oldsession001"),
+    )
     con.commit()
     con.close()
     assert session_store.cleanup(db, 7) == 1
     assert session_store.get_session(db, "oldsession001") is None
+
+
+def test_cleanup_keeps_recently_active_session(tmp_path):
+    """TTL 以最后活跃时间为准：创建早但近期有活动的会话不应被清理。"""
+    import sqlite3
+    import time
+
+    db = str(tmp_path / "sessions.db")
+    session_store.create_session(db, "活跃会话", "activesession01")
+    old = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - 8 * 86400))
+    con = sqlite3.connect(db)
+    con.execute("UPDATE sessions SET created_at=? WHERE id=?", (old, "activesession01"))
+    con.commit()
+    con.close()
+    assert session_store.cleanup(db, 7) == 0
+    assert session_store.get_session(db, "activesession01") is not None

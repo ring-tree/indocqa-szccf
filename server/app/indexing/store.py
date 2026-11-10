@@ -1,39 +1,64 @@
 """向量库存取：Chroma 持久化 + 父块文本侧车（parents.json）。
 
-集合名携带嵌入后端标识，防止不同后端的向量混入同一空间。
+集合名携带嵌入后端标识，防止不同后端的向量混入同一空间；文档目录写入
+Chroma 元数据（folder），检索按目录子树过滤。
 """
 
 import json
 import pathlib
-from functools import lru_cache
+from collections import OrderedDict
 
 from app.indexing.embedder import get_embedder
+from app.indexing.folders import DEFAULT_FOLDER
 from app.indexing.lock import write_guard
 from app.parsing.models import ChildChunk, ParentChunk
 
+_EMBED_CACHE: OrderedDict[tuple[str, str], list[float]] = OrderedDict()
+_EMBED_CACHE_MAX = 256
+_collections: dict[tuple[str, str], object] = {}
+_parents_cache: dict[str, tuple[float, dict]] = {}
 
-@lru_cache
+
 def _client(chroma_dir: str):
     import chromadb
     from chromadb.config import Settings as ChromaSettings
 
-    return chromadb.PersistentClient(
-        path=chroma_dir, settings=ChromaSettings(anonymized_telemetry=False)
-    )
+    if not hasattr(_client, "_instances"):
+        _client._instances = {}
+    if chroma_dir not in _client._instances:
+        _client._instances[chroma_dir] = chromadb.PersistentClient(
+            path=chroma_dir, settings=ChromaSettings(anonymized_telemetry=False)
+        )
+    return _client._instances[chroma_dir]
+
+
+def _client_cache_clear() -> None:
+    """测试用：清空客户端与集合缓存（兼容原有 `store._client.cache_clear()` 调用）。"""
+    if hasattr(_client, "_instances"):
+        _client._instances.clear()
+    _collections.clear()
+    _parents_cache.clear()
+    _EMBED_CACHE.clear()
+
+
+_client.cache_clear = _client_cache_clear
 
 
 def _collection(settings):
     embedder = get_embedder(settings)
-    return _client(str(pathlib.Path(settings.chroma_dir))).get_or_create_collection(
-        name=f"indocqa_{embedder.backend_id}",
-        metadata={
-            "hnsw:space": "cosine",
-            # 小库默认参数在增删/重启后偶发漏召回；提高构图与查询 ef 换取稳定召回
-            "hnsw:construction_ef": 200,
-            "hnsw:search_ef": 200,
-            "hnsw:M": 32,
-        },
-    )
+    key = (str(pathlib.Path(settings.chroma_dir)), embedder.backend_id)
+    if key not in _collections:
+        _collections[key] = _client(key[0]).get_or_create_collection(
+            name=f"indocqa_{embedder.backend_id}",
+            metadata={
+                "hnsw:space": "cosine",
+                # 小库默认参数在增删/重启后偶发漏召回；提高构图与查询 ef 换取稳定召回
+                "hnsw:construction_ef": 200,
+                "hnsw:search_ef": 200,
+                "hnsw:M": 32,
+            },
+        )
+    return _collections[key]
 
 
 def _parents_path(settings) -> pathlib.Path:
@@ -42,19 +67,44 @@ def _parents_path(settings) -> pathlib.Path:
 
 def _load_parents(settings) -> dict:
     p = _parents_path(settings)
-    if p.exists():
-        return json.loads(p.read_text(encoding="utf-8"))
-    return {}
+    if not p.exists():
+        return {}
+    mtime = p.stat().st_mtime
+    hit = _parents_cache.get(str(p))
+    if hit and hit[0] == mtime:
+        return hit[1]
+    data = json.loads(p.read_text(encoding="utf-8"))
+    _parents_cache[str(p)] = (mtime, data)
+    return data
 
 
 def _save_parents(settings, parents: dict) -> None:
     p = _parents_path(settings)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(parents, ensure_ascii=False), encoding="utf-8")
+    _parents_cache[str(p)] = (p.stat().st_mtime, parents)
+
+
+def query_embedding(settings, text: str) -> list[float]:
+    """查询向量带进程内 LRU（256 条）：重复/相近问题免去一次嵌入调用。"""
+    embedder = get_embedder(settings)
+    key = (embedder.backend_id, text)
+    if key in _EMBED_CACHE:
+        _EMBED_CACHE.move_to_end(key)
+        return _EMBED_CACHE[key]
+    vector = embedder.query_embed([text])[0]
+    _EMBED_CACHE[key] = vector
+    if len(_EMBED_CACHE) > _EMBED_CACHE_MAX:
+        _EMBED_CACHE.popitem(last=False)
+    return vector
 
 
 def add_children(
-    settings, children: list[ChildChunk], parents: list[ParentChunk], doc_name: str
+    settings,
+    children: list[ChildChunk],
+    parents: list[ParentChunk],
+    doc_name: str,
+    folder: str = DEFAULT_FOLDER,
 ) -> None:
     from app.indexing.bm25_index import get_bm25
 
@@ -68,6 +118,7 @@ def add_children(
                 "doc_name": doc_name,
                 "section": c.section,
                 "kind": c.kind,
+                "folder": folder,
             }
             if c.page is not None:
                 meta["page"] = c.page
@@ -92,12 +143,34 @@ def add_children(
         get_bm25(settings).update({c.chunk_id: f"{c.section}\n{c.text}" for c in children})
 
 
-def query(settings, query_text: str, top_k: int) -> list[dict]:
-    """返回 [{"sim", "text", "doc_id", ...}]；相似度 = 1 - 余弦距离。"""
-    embedder = get_embedder(settings)
-    emb = embedder.query_embed([query_text])[0]
+def _where_for_folder(folder: str | None, folders: list[str]) -> dict | None:
+    from app.indexing.folders import normalize_folder
+
+    path = normalize_folder(folder, default=None)
+    if not path:
+        return None
+    paths = [p for p in folders if p == path or p.startswith(path + "/")]
+    if not paths:
+        paths = [path]
+    if len(paths) == 1:
+        return {"folder": paths[0]}
+    return {"folder": {"$in": paths}}
+
+
+def query(settings, query_text: str, top_k: int, folder: str | None = None) -> list[dict]:
+    """返回 [{"sim", "text", "doc_id", ...}]；相似度 = 1 - 余弦距离。
+
+    folder 非空时只召回该目录子树（含自身）的块。
+    """
+    emb = query_embedding(settings, query_text)
+    where = None
+    if folder:
+        where = _where_for_folder(folder, _manifest_folders(settings))
     res = _collection(settings).query(
-        query_embeddings=[emb], n_results=top_k, include=["documents", "metadatas", "distances"]
+        query_embeddings=[emb],
+        n_results=top_k,
+        where=where,
+        include=["documents", "metadatas", "distances"],
     )
     hits = []
     for cid, doc, meta, dist in zip(
@@ -115,9 +188,16 @@ def query(settings, query_text: str, top_k: int) -> list[dict]:
                 "page": meta.get("page"),
                 "kind": meta.get("kind", "text"),
                 "table_no": meta.get("table_no"),
+                "folder": meta.get("folder") or DEFAULT_FOLDER,
             }
         )
     return hits
+
+
+def _manifest_folders(settings) -> list[str]:
+    from app.indexing.manifest import Manifest
+
+    return Manifest(Manifest.path_for(settings)).folders()
 
 
 def get_parent_text(settings, doc_id: str, section: str) -> str:
@@ -147,9 +227,38 @@ def get_by_ids(settings, chunk_ids: list[str]) -> list[dict]:
                 "page": meta.get("page"),
                 "kind": meta.get("kind", "text"),
                 "table_no": meta.get("table_no"),
+                "folder": meta.get("folder") or DEFAULT_FOLDER,
             }
         )
     return hits
+
+
+def folders_of(settings, chunk_ids: list[str]) -> dict[str, str]:
+    """批量取块的目录（BM25 路按目录过滤时使用）。"""
+    if not chunk_ids:
+        return {}
+    res = _collection(settings).get(ids=list(chunk_ids), include=["metadatas"])
+    return {
+        cid: ((meta or {}).get("folder") or DEFAULT_FOLDER)
+        for cid, meta in zip(res["ids"], res["metadatas"])
+    }
+
+
+def update_doc_folder(settings, doc_id: str, folder: str) -> int:
+    """只改元数据，不重新嵌入；返回更新的块数。"""
+    with write_guard(settings):
+        collection = _collection(settings)
+        res = collection.get(where={"doc_id": doc_id}, include=["metadatas"])
+        ids = res.get("ids") or []
+        if not ids:
+            return 0
+        metadatas = []
+        for meta in res.get("metadatas") or []:
+            item = dict(meta or {})
+            item["folder"] = folder
+            metadatas.append(item)
+        collection.update(ids=ids, metadatas=metadatas)
+        return len(ids)
 
 
 def delete_doc(settings, doc_id: str) -> None:
@@ -157,9 +266,14 @@ def delete_doc(settings, doc_id: str) -> None:
 
     with write_guard(settings):
         _collection(settings).delete(where={"doc_id": doc_id})
-        parents = {pid: p for pid, p in _load_parents(settings).items() if p["doc_id"] != doc_id}
-        _save_parents(settings, parents)
-        get_bm25(settings).remove_doc(doc_id)
+        try:
+            parents = {
+                pid: p for pid, p in _load_parents(settings).items() if p["doc_id"] != doc_id
+            }
+            _save_parents(settings, parents)
+        finally:
+            # 父块写失败也要保证关键词侧车不残留
+            get_bm25(settings).remove_doc(doc_id)
 
 
 def is_empty(settings) -> bool:

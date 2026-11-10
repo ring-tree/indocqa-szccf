@@ -5,6 +5,7 @@
 """
 
 import re
+import unicodedata
 from dataclasses import dataclass
 
 _CHITCHAT = re.compile(
@@ -17,14 +18,16 @@ _FAULT = re.compile(
 )
 _FAULT_CODE = re.compile(r"\b[Ee][-]?\d{2,3}\b")
 _PARAM = re.compile(
-    r"多少|额定|参数表?|周期|规格|范围|容量|流量|压力值|温度值|功率是|尺寸|重量|电压|电流|几 "
+    r"多少|多久|额定|参数表?|周期|规格|范围|容量|流量|压力值|温度值|功率是|尺寸|重量|电压|电流|几|"
+    r"控制|保持|允许|上限|下限|等级"
 )
 _TERM = re.compile(
     r"是什么|什么意思|什么含义|什么定义|定义是|指什么|指的是|全称|缩写|同一|一回事|一样吗|等同|区别|difference|what is|what does.*mean",
     re.IGNORECASE,
 )
 _PROCEDURE = re.compile(
-    r"怎么|如何|步骤|操作流程|操作方法|处理|处置|怎么办|怎么排查|怎么处理|维护流程|how to|how do",
+    r"怎么|如何|步骤|操作流程|操作方法|处理|处置|怎么办|怎么排查|怎么处理|维护流程|"
+    r"方法|流程|排查|维护|保养|更换|安装|调试|启停|操作|巡检|点检|记录|how to|how do",
     re.IGNORECASE,
 )
 _ENTITY = re.compile(r"[A-Za-z][A-Za-z0-9.\-]{1,14}")
@@ -68,17 +71,19 @@ def entities_of(question: str) -> list[str]:
 
 
 def classify(question: str) -> IntentResult:
-    q = question.strip()
+    # 全角字母/连字符/数字归一（Ｅ－０５ → E-05），再进入规则与检索
+    q = unicodedata.normalize("NFKC", question).strip()
     entities = entities_of(q)
     if len(q) <= 20 and _CHITCHAT.search(q):
         return IntentResult("chitchat", entities)
     fault_text = _NO_FAULT_TERM.sub("", q)
+    # 多实体对比优先于故障意图：避免“E-05 和 E-06 的区别”被单一故障规则截走
+    if _CONNECTIVE.search(q) and len(entities) >= 2:
+        return IntentResult("multihop", entities)
     if _FAULT.search(fault_text) or _FAULT_CODE.search(q):
         return IntentResult("fault", entities)
     # 多跳：连接词 + ≥2 实体，或“对比型术语问题”
-    if (_CONNECTIVE.search(q) and len(entities) >= 2) or (
-        _TERM.search(q) and _CONNECTIVE.search(q)
-    ):
+    if _TERM.search(q) and _CONNECTIVE.search(q):
         return IntentResult("multihop", entities)
     if _PARAM.search(q):
         return IntentResult("param", entities)

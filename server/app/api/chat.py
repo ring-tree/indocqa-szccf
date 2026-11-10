@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.exceptions import KBEmptyError, ParamError, UpstreamError
 from app.core.llm import LLMGateway
 from app.graph import pipeline
+from app.indexing.folders import FolderPathError, normalize_folder
 from app.session import store as session_store
 
 router = APIRouter(prefix="/api")
@@ -30,6 +31,12 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
         raise UpstreamError("直连模式需要配置模型网关（server/.env）")
     if req.session_id and not session_store.valid_id(req.session_id):
         raise ParamError("sessionId 格式不合法")
+    folder = None
+    if req.folder:
+        try:
+            folder = normalize_folder(req.folder, default=None)
+        except FolderPathError as e:
+            raise ParamError(str(e)) from e
 
     async def event_gen():
         async for ev in pipeline.chat_stream(
@@ -39,6 +46,7 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             settings,
             session_id=req.session_id,
             profile=None if req.profile in (None, "auto") else req.profile,
+            folder=folder,
         ):
             if ev["event"] == "done":
                 ev["data"]["request_id"] = rid

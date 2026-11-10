@@ -3,12 +3,13 @@ import Message from "../components/Message";
 import ModelPicker from "../components/ModelPicker";
 import {
   createSession,
+  fetchFolders,
   fetchModels,
   fetchSession,
   sendChat,
   type ChatMode,
 } from "../lib/api";
-import type { ChatMessage, DonePayload, ModelProfile } from "../lib/types";
+import type { ChatMessage, DonePayload, KBFolder, ModelProfile } from "../lib/types";
 
 interface Props {
   activeId: string | null;
@@ -16,6 +17,27 @@ interface Props {
   onRefreshSessions: () => void;
   className?: string;
   examples?: string[];
+  active?: boolean;
+}
+
+const SCOPE_KEY = "indocqa-scope";
+
+const ERROR_HINT: Record<number, string> = {
+  40001: "请求参数不合法，请检查问题或检索范围",
+  40002: "文件超过 20MB 上限",
+  40003: "文件格式不支持",
+  40401: "知识库为空，请先在文档管理页入库",
+  40402: "文档或目录不存在，请刷新后重试",
+  40403: "会话不存在或已过期，请新建会话",
+  40902: "向量库与当前嵌入后端不一致，需要重建索引",
+  40903: "知识库正在被另一个进程写入，请稍后再试",
+  42901: "模型限流或不可用，已尝试主备切换，请稍后重试",
+  50001: "检索服务异常（嵌入或向量库），请检查服务状态",
+};
+
+function describeError(code: number | undefined, message: string): string {
+  const hint = code ? ERROR_HINT[code] : undefined;
+  return hint ? `${hint}（${message}）` : message;
 }
 
 function ChatView({
@@ -24,6 +46,7 @@ function ChatView({
   onRefreshSessions,
   className = "",
   examples = [],
+  active = true,
 }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -33,11 +56,16 @@ function ChatView({
   const [models, setModels] = useState<ModelProfile[]>([]);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [profile, setProfile] = useState("");
+  const [folders, setFolders] = useState<KBFolder[]>([]);
+  const [folder, setFolder] = useState(() => localStorage.getItem(SCOPE_KEY) ?? "");
   const [notice, setNotice] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const currentRef = useRef<string | null>(null);
+  const runIdRef = useRef(0);
+  const bufferRef = useRef("");
+  const flushTimerRef = useRef<number | null>(null);
   const hasModels = models.length > 0;
 
   useEffect(() => {
@@ -48,11 +76,42 @@ function ChatView({
       })
       .catch(() => setModels([]))
       .finally(() => setModelsLoaded(true));
+    fetchFolders()
+      .then((list) => {
+        setFolders(list);
+        setFolder((current) => (list.some((f) => f.path === current) ? current : ""));
+      })
+      .catch(() => setFolders([]));
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(SCOPE_KEY, folder);
+  }, [folder]);
+
+  // 文档页增删目录后回到问答页时刷新范围列表
+  useEffect(() => {
+    if (!active) return;
+    fetchFolders()
+      .then((list) => {
+        setFolders(list);
+        setFolder((current) => (list.some((f) => f.path === current) ? current : ""));
+      })
+      .catch(() => setFolders([]));
+  }, [active]);
 
   useEffect(() => {
     if (activeId === currentRef.current) return;
     currentRef.current = activeId;
+    // 切换会话时中止在途生成，并用 runId 让迟到的 token 失效，避免写入错误会话
+    runIdRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    bufferRef.current = "";
+    if (flushTimerRef.current !== null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    setBusy(false);
     if (!activeId) {
       setMessages([]);
       return;
@@ -101,6 +160,17 @@ function ChatView({
     if (!hasModels && mode === "direct") setMode("kb");
   }, [hasModels, mode]);
 
+  function flushBuffer() {
+    if (flushTimerRef.current !== null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    const text = bufferRef.current;
+    if (!text) return;
+    bufferRef.current = "";
+    patchLast((m) => ({ ...m, content: m.content + text }));
+  }
+
   async function ask(retryText?: string) {
     const text = (retryText ?? input).trim();
     if (!text || busy) return;
@@ -122,6 +192,13 @@ function ChatView({
       }
     }
 
+    const runId = ++runIdRef.current;
+    bufferRef.current = "";
+    if (flushTimerRef.current !== null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    const alive = () => runId === runIdRef.current;
     const controller = new AbortController();
     abortRef.current = controller;
     setBusy(true);
@@ -138,10 +215,28 @@ function ChatView({
         mode,
         sid,
         {
-          onSources: (items) => patchLast((m) => ({ ...m, sources: items })),
-          onToken: (delta) => patchLast((m) => ({ ...m, content: m.content + delta })),
-          onTrace: (step) => patchLast((m) => ({ ...m, trace: [...(m.trace ?? []), step] })),
+          onSources: (items) => {
+            if (!alive()) return;
+            patchLast((m) => ({ ...m, sources: items }));
+          },
+          onToken: (delta) => {
+            if (!alive()) return;
+            // 40ms 批量刷入，避免每个 token 都触发整段 Markdown 重解析
+            bufferRef.current += delta;
+            if (flushTimerRef.current === null) {
+              flushTimerRef.current = window.setTimeout(() => {
+                flushTimerRef.current = null;
+                flushBuffer();
+              }, 40);
+            }
+          },
+          onTrace: (step) => {
+            if (!alive()) return;
+            patchLast((m) => ({ ...m, trace: [...(m.trace ?? []), step] }));
+          },
           onDone: (done: DonePayload) => {
+            if (!alive()) return;
+            flushBuffer();
             patchLast((m) => ({
               ...m,
               id: done.messageId ?? undefined,
@@ -155,24 +250,34 @@ function ChatView({
               onActiveId(done.sessionId);
             }
           },
-          onError: (message) =>
+          onError: (message, code) => {
+            if (!alive()) return;
+            flushBuffer();
             patchLast((m) => ({
               ...m,
               error: true,
-              content: `${m.content}${m.content ? "\n" : ""}[请求失败] ${message}`,
-            })),
+              content: `${m.content}${m.content ? "\n" : ""}[请求失败] ${describeError(
+                code,
+                message,
+              )}`,
+            }));
+          },
         },
         controller.signal,
         profile,
+        folder || null,
       );
     } catch (e) {
+      if (!alive()) return;
       if (controller.signal.aborted) {
+        flushBuffer();
         patchLast((m) => ({
           ...m,
           stopped: true,
           content: m.content || "已停止生成。",
         }));
       } else {
+        flushBuffer();
         patchLast((m) => ({
           ...m,
           error: true,
@@ -182,17 +287,24 @@ function ChatView({
         }));
       }
     } finally {
-      patchLast((m) => ({ ...m, streaming: false }));
-      setBusy(false);
-      abortRef.current = null;
-      onRefreshSessions();
+      if (alive()) {
+        flushBuffer();
+        patchLast((m) => ({ ...m, streaming: false }));
+        setBusy(false);
+        abortRef.current = null;
+        onRefreshSessions();
+      }
     }
   }
 
   function stop() {
+    flushBuffer();
+    runIdRef.current += 1; // 让迟到的 token 失效
     abortRef.current?.abort();
+    abortRef.current = null;
     setBusy(false);
     patchLast((m) => ({ ...m, streaming: false, stopped: true }));
+    onRefreshSessions();
   }
 
   function retryLast() {
@@ -240,9 +352,30 @@ function ChatView({
             );
           })}
         </div>
-        <span className="hidden text-xs font-medium text-[var(--muted)] sm:block">
-          {mode === "kb" ? "回答仅依据已入库文档，逐句附引用" : "不经过知识库检索"}
-        </span>
+        <div className="flex flex-wrap items-center gap-3">
+          {mode === "kb" && (
+            <label className="ui-scope">
+              <span className="ui-scope-label">检索范围</span>
+              <select
+                value={folder}
+                onChange={(e) => setFolder(e.target.value)}
+                disabled={busy}
+                aria-label="选择知识库检索范围"
+                className="ui-scope-select"
+              >
+                <option value="">全部知识库</option>
+                {folders.map((item) => (
+                  <option key={item.path} value={item.path}>
+                    {item.path}（{item.documentCount}）
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <span className="hidden text-xs font-medium text-[var(--muted)] sm:block">
+            {mode === "kb" ? "回答仅依据已入库文档，逐句附引用" : "不经过知识库检索"}
+          </span>
+        </div>
       </div>
 
       <div className="sr-only" role="status" aria-live="polite">

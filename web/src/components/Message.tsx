@@ -174,11 +174,15 @@ function SourcePanel({
                 {s.index}
               </span>
               <span className="min-w-0 truncate">
+                {s.folder && <span className="ui-source-folder">{s.folder}</span>}
                 {s.docName} · {s.section}
                 {s.page != null && ` · 第${s.page}页`}
                 {s.locator && ` · ${s.locator}`}
               </span>
             </button>
+            {active === s.index && s.snippet && (
+              <div className="ui-source-snippet">{s.snippet}</div>
+            )}
           </li>
         ))}
       </ul>

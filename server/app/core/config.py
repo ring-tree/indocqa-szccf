@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     conf_high: float = 0.42
     # 弱命中闸门：最高相似度低于该值时按“库外问题”处理（bge-m3 无关文本约 0.4–0.5）
     boundary_min_sim: float = 0.50
+    # 本地 fastembed 小模型的相似度分布整体偏低（相关块约 0.45–0.55），单独设阈值
+    boundary_min_sim_local: float = 0.40
     terms_file: str = "../data/terms/terms.json"
     use_rerank: bool = False
     # 消融实验开关：关闭后 adaptive 模式不再做查询侧术语扩展（索引侧打标保留，属部分消融）

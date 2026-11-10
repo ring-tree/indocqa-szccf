@@ -6,6 +6,8 @@ export interface Source {
   page: number | null;
   locator: string | null;
   score: number | null;
+  folder?: string;
+  snippet?: string;
 }
 
 export interface TraceStep {
@@ -17,6 +19,7 @@ export interface TraceStep {
   query?: string;
   expansions?: string[];
   hits?: number;
+  folder?: string;
   result?: string;
 }
 
@@ -63,8 +66,19 @@ export interface Session {
 export interface KBDocument {
   docId: string;
   filename: string;
+  folder?: string;
   chunks: number;
+  pages?: number | null;
+  tables?: number | null;
   ingestedAt: string | null;
+}
+
+export interface KBFolder {
+  path: string;
+  name: string;
+  parent: string;
+  documentCount: number;
+  chunkCount: number;
 }
 
 export type ChatMode = "kb" | "direct";

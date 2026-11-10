@@ -122,7 +122,16 @@ def _push(paras: list[str], buf: list[str]) -> None:
 
 
 def _load_md(path, doc_id: str) -> LoadedDoc:
-    text = path.read_text(encoding="utf-8")
+    raw = path.read_bytes()
+    text = None
+    for encoding in ("utf-8-sig", "utf-8", "gb18030"):
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        raise UnsupportedFormatError("无法识别文本编码", detail=str(path.name))
     paragraphs: list[Paragraph] = []
     tables: list[RawTable] = []
     section = ""

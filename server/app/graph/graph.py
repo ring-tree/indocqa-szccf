@@ -19,6 +19,7 @@ from app.retrieval.searcher import Hit, search
 class GState(TypedDict, total=False):
     question: str
     mode: str
+    folder: str | None
     top_k_override: int | None
     intent: str
     entities: list
@@ -71,6 +72,21 @@ def rewrite_node(state: GState) -> dict:
 def retrieve_node(state: GState) -> dict:
     plan = state["plan"]
     top_k = plan.get("top_k") or 6
+    if plan.get("strategy") == "none":
+        return {
+            "hits": [],
+            "trace": state["trace"]
+            + [
+                {
+                    "stage": "retrieve",
+                    "hop": 0,
+                    "strategy": "none",
+                    "query": state["question"],
+                    "expansions": [],
+                    "hits": 0,
+                }
+            ],
+        }
     query_sem = state.get("query") or state["question"]
     query_lex = state.get("query_lex") or state["question"]
     hits = search(
@@ -78,9 +94,16 @@ def retrieve_node(state: GState) -> dict:
         top_k=top_k * 2,
         query_lex=query_lex if query_lex != query_sem else None,
         strategy=plan.get("strategy", "hybrid"),
+        folder=state.get("folder"),
     )
     if plan.get("boost_table"):
-        hits.sort(key=lambda h: (h.kind == "table", h.rrf), reverse=True)
+        # 分数加权而非“表格优先”：避免低相关表格仅凭类型挤掉高相关正文
+        from dataclasses import replace
+
+        hits = [
+            replace(h, rrf=round(h.rrf * (1.12 if h.kind == "table" else 1.0), 5)) for h in hits
+        ]
+        hits.sort(key=lambda h: h.rrf, reverse=True)
     hits = rerank_mod.rerank(query_lex, hits, top_k)
     merged = {h.chunk_id: h for h in state.get("hits", [])}
     for h in hits:
@@ -96,6 +119,7 @@ def retrieve_node(state: GState) -> dict:
                 "strategy": plan["strategy"],
                 "query": query_lex,
                 "expansions": state.get("expansions", []),
+                "folder": state.get("folder") or "",
                 "hits": len(hits),
             }
         ],
@@ -187,10 +211,21 @@ def get_compiled_graph():
     return _compiled
 
 
-async def run_retrieval(question: str, mode: str, settings=None, top_k: int | None = None) -> dict:
+async def run_retrieval(
+    question: str,
+    mode: str,
+    settings=None,
+    top_k: int | None = None,
+    folder: str | None = None,
+) -> dict:
     """执行状态图，返回最终状态（plan / intent / hits / trace）。"""
     final = await get_compiled_graph().ainvoke(
-        {"question": question, "mode": mode, "top_k_override": top_k}
+        {
+            "question": question,
+            "mode": mode,
+            "folder": folder,
+            "top_k_override": top_k,
+        }
     )
     hits = [h for h in final.get("hits", []) if isinstance(h, Hit)]
     return {

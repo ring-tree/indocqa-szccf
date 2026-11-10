@@ -28,5 +28,7 @@ class ChatRequest(BaseModel):
     top_k: int | None = Field(default=None, ge=1, le=20, alias="topK")
     # auto / primary / backup；不传等同 auto
     profile: str | None = Field(default=None, max_length=32)
+    # 知识库目录检索范围（空=全库）
+    folder: str | None = Field(default=None, max_length=200)
 
     model_config = {"populate_by_name": True}

@@ -9,6 +9,7 @@ import time
 
 from app.core.config import get_settings
 from app.indexing import store
+from app.indexing.folders import ancestors, normalize_folder
 from app.indexing.lock import write_guard
 from app.indexing.manifest import Manifest
 from app.parsing.chunker import build_chunks
@@ -18,25 +19,32 @@ SKIP_FILES = {"sources.md"}
 ALLOWED_EXTS = {".pdf"} | MD_EXTS
 
 
-def ingest_file(path: pathlib.Path, settings=None, stored_name: str | None = None) -> dict:
+def ingest_file(
+    path: pathlib.Path,
+    settings=None,
+    stored_name: str | None = None,
+    folder: str | None = None,
+) -> dict:
     settings = settings or get_settings()
     started = time.perf_counter()
     content_hash = _hash_of(path)
-    manifest = Manifest(pathlib.Path(settings.chroma_dir) / "manifest.json")
-    existed = manifest.has_hash(content_hash)
-    if existed:
-        info = manifest.get(existed)
-        return {
-            "docId": existed,
-            "filename": info["filename"],
-            "pages": info.get("pages"),
-            "chunks": info.get("chunks", 0),
-            "durationMs": int((time.perf_counter() - started) * 1000),
-            "duplicated": True,
-        }
-    # 去重先于后端校验：本地模式下重复上传已存在文档应返回“已存在”，而不是 40902
+    target_folder = normalize_folder(folder)
+    manifest = Manifest(Manifest.path_for(settings))
     with write_guard(settings):
+        # 后端一致性先于去重：换后端后旧 manifest 不应让入库被“内容已存在”静默跳过
         _ensure_backend_match(settings, manifest)
+        existed = manifest.has_hash(content_hash)
+        if existed:
+            info = manifest.get(existed)
+            return {
+                "docId": existed,
+                "filename": info["filename"],
+                "pages": info.get("pages"),
+                "chunks": info.get("chunks", 0),
+                "folder": info.get("folder") or target_folder,
+                "durationMs": int((time.perf_counter() - started) * 1000),
+                "duplicated": True,
+            }
 
         doc = load_document(path)
         children, parents = build_chunks(doc)
@@ -46,10 +54,19 @@ def ingest_file(path: pathlib.Path, settings=None, stored_name: str | None = Non
                 "filename": doc.filename,
                 "pages": doc.pages,
                 "chunks": 0,
+                "folder": target_folder,
                 "durationMs": 0,
                 "duplicated": False,
             }
-        store.add_children(settings, children, parents, doc.filename)
+        try:
+            store.add_children(settings, children, parents, doc.filename, target_folder)
+        except Exception:
+            # 补偿：向量/父块/BM25 任一环节失败时不留下孤儿块
+            try:
+                store.delete_doc(settings, doc.doc_id)
+            except Exception:  # noqa: BLE001, S110 回滚失败不应掩盖原始异常
+                pass
+            raise
         manifest.upsert(
             doc.doc_id,
             {
@@ -60,25 +77,29 @@ def ingest_file(path: pathlib.Path, settings=None, stored_name: str | None = Non
                 "tables": len(doc.tables),
                 "stored_name": stored_name,
                 "backend": store.get_embedder(settings).backend_id,
+                "folder": target_folder,
             },
         )
+        for path_item in ancestors(target_folder):
+            manifest.ensure_folder(path_item)
         manifest.save()
         return {
             "docId": doc.doc_id,
             "filename": doc.filename,
             "pages": doc.pages,
             "chunks": len(children),
+            "folder": target_folder,
             "durationMs": int((time.perf_counter() - started) * 1000),
             "duplicated": False,
         }
 
 
-def ingest_dir(directory: pathlib.Path, settings=None) -> list[dict]:
+def ingest_dir(directory: pathlib.Path, settings=None, folder: str | None = None) -> list[dict]:
     settings = settings or get_settings()
     results = []
     for path in sorted(directory.iterdir()):
         if path.is_file() and path.suffix.lower() in ALLOWED_EXTS and path.name not in SKIP_FILES:
-            results.append(ingest_file(path, settings))
+            results.append(ingest_file(path, settings, folder=folder))
     return results
 
 

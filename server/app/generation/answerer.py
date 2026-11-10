@@ -50,15 +50,23 @@ def confidence_of(hits: list[Hit], refused: bool, settings: Settings) -> tuple[s
     return "low", "命中相似度偏低，答案可靠性有限"
 
 
+_STEP_RULE = (
+    "6) 若问题属于操作步骤或故障处置，请用编号列表给出可执行步骤；"
+    "资料只给出步骤编号或缺失细节时，明确说明缺失，不得编造。"
+)
+
+
 async def stream_answer(
     question: str,
     hits: list[Hit],
     gateway: LLMGateway | None,
     history: list[dict] | None = None,
+    intent: str | None = None,
 ) -> AsyncIterator[str]:
     if gateway and gateway.configured:
+        system = SYSTEM_PROMPT + (_STEP_RULE if intent in {"procedure", "fault"} else "")
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system},
             *(history or []),
             {
                 "role": "user",

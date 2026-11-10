@@ -214,12 +214,12 @@ def get_messages(path: str, session_id: str, limit: int | None = None) -> list[d
 
 
 def cleanup(path: str, ttl_days: int) -> int:
-    """删除创建时间超过 TTL 的会话（默认 7 天），返回删除条数。"""
+    """删除最后活跃时间超过 TTL 的会话（默认 7 天），返回删除条数。"""
     if ttl_days <= 0:
         return 0
     cutoff = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - ttl_days * 86400))
     with _connect(path) as con:
-        cur = con.execute("DELETE FROM sessions WHERE created_at < ?", (cutoff,))
+        cur = con.execute("DELETE FROM sessions WHERE updated_at < ?", (cutoff,))
         return cur.rowcount
 
 

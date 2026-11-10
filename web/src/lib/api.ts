@@ -3,6 +3,7 @@ import type {
   ChatMode,
   DonePayload,
   KBDocument,
+  KBFolder,
   ModelProfile,
   Session,
   Source,
@@ -14,7 +15,7 @@ interface ChatCallbacks {
   onToken: (delta: string) => void;
   onTrace: (step: TraceStep) => void;
   onDone: (done: DonePayload) => void;
-  onError: (message: string) => void;
+  onError: (message: string, code?: number) => void;
 }
 
 export async function sendChat(
@@ -24,6 +25,7 @@ export async function sendChat(
   cb: ChatCallbacks,
   signal?: AbortSignal,
   profile?: string | null,
+  folder?: string | null,
 ): Promise<void> {
   await postSSE(
     "/api/chat",
@@ -32,6 +34,7 @@ export async function sendChat(
       mode,
       ...(sessionId ? { sessionId } : {}),
       ...(profile ? { profile } : {}),
+      ...(folder ? { folder } : {}),
     },
     (ev) => {
       const data = ev.data as Record<string, unknown>;
@@ -45,7 +48,7 @@ export async function sendChat(
         cb.onDone(data as unknown as DonePayload);
       } else if (ev.event === "error") {
         const err = data as { message?: string; code?: number };
-        cb.onError(err.message ?? `错误 ${err.code ?? ""}`);
+        cb.onError(err.message ?? `错误 ${err.code ?? ""}`, err.code);
       }
     },
     signal,
@@ -66,9 +69,58 @@ async function jsonOrThrow<T>(resp: Response): Promise<T> {
   return (await resp.json()) as T;
 }
 
-export async function fetchDocuments(): Promise<KBDocument[]> {
-  const body = await jsonOrThrow<{ data: KBDocument[] }>(await fetch("/api/kb/documents"));
+export async function fetchDocuments(folder?: string | null): Promise<KBDocument[]> {
+  const query = folder ? `?folder=${encodeURIComponent(folder)}` : "";
+  const body = await jsonOrThrow<{ data: KBDocument[] }>(
+    await fetch(`/api/kb/documents${query}`),
+  );
   return body.data ?? [];
+}
+
+export async function fetchFolders(): Promise<KBFolder[]> {
+  const body = await jsonOrThrow<{ data: KBFolder[] }>(await fetch("/api/kb/folders"));
+  return body.data ?? [];
+}
+
+export async function createFolder(path: string): Promise<KBFolder> {
+  const body = await jsonOrThrow<{ data: KBFolder }>(
+    await fetch("/api/kb/folders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    }),
+  );
+  return body.data;
+}
+
+export async function renameFolder(source: string, target: string): Promise<KBFolder> {
+  const body = await jsonOrThrow<{ data: KBFolder }>(
+    await fetch("/api/kb/folders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: source, to: target }),
+    }),
+  );
+  return body.data;
+}
+
+export async function deleteFolder(path: string, mode: "move" | "delete"): Promise<void> {
+  await jsonOrThrow(
+    await fetch(
+      `/api/kb/folders?path=${encodeURIComponent(path)}&mode=${encodeURIComponent(mode)}`,
+      { method: "DELETE" },
+    ),
+  );
+}
+
+export async function moveDocument(docId: string, folder: string): Promise<void> {
+  await jsonOrThrow(
+    await fetch(`/api/kb/documents/${docId}/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder }),
+    }),
+  );
 }
 
 export interface PreviewIssue {
@@ -101,11 +153,14 @@ export async function previewDocument(file: File): Promise<PreviewReport> {
 
 export async function uploadDocument(
   file: File,
-): Promise<{ filename: string; chunks: number; duplicated: boolean }> {
-  const body = await postFile<{ data: { filename: string; chunks: number; duplicated: boolean } }>(
-    "/api/kb/ingest",
-    file,
-  );
+  folder?: string | null,
+): Promise<{ filename: string; chunks: number; duplicated: boolean; folder: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  if (folder) form.append("folder", folder);
+  const body = await jsonOrThrow<{
+    data: { filename: string; chunks: number; duplicated: boolean; folder: string };
+  }>(await fetch("/api/kb/ingest", { method: "POST", body: form }));
   return body.data;
 }
 

@@ -4,7 +4,6 @@ SSE 事件顺序：trace* → sources → token* → done（错误时以 error �
 """
 
 import asyncio
-import pathlib
 import re
 from collections.abc import AsyncIterator
 
@@ -46,6 +45,7 @@ def _refusal_head(text: str) -> bool:
 
 
 def _source_item(hit: Hit, idx: int) -> dict:
+    limit = 400 if hit.kind == "table" else 240
     return {
         "index": idx,
         "docId": hit.doc_id,
@@ -53,7 +53,9 @@ def _source_item(hit: Hit, idx: int) -> dict:
         "section": hit.section,
         "page": hit.page,
         "locator": hit.table_no,
+        "folder": hit.folder,
         "score": round(hit.sim, 4) if hit.sim is not None else None,
+        "snippet": hit.text[:limit],
     }
 
 
@@ -94,19 +96,36 @@ def _context_query(message: str, history: list[dict]) -> str:
     return message
 
 
-def _scope(settings) -> list[str]:
-    """已入库文档名，用于库外回答说明“检索过什么”。"""
+def _scope(settings, folder: str | None = None) -> list[str]:
+    """已入库文档名，用于库外回答说明“检索过什么”；可按目录收敛。"""
     try:
-        docs = Manifest(pathlib.Path(settings.chroma_dir) / "manifest.json").documents()
+        docs = Manifest(Manifest.path_for(settings)).documents()
     except (OSError, ValueError, KeyError):
         return []
-    return [d.get("filename", "") for d in docs.values() if d.get("filename")][:10]
+    names = []
+    for info in docs.values():
+        if folder and not (
+            info.get("folder") == folder or (info.get("folder") or "").startswith(folder + "/")
+        ):
+            continue
+        if info.get("filename"):
+            names.append(info["filename"])
+    return names[:10]
+
+
+def _boundary_min_sim(settings) -> float:
+    """弱命中阈值按嵌入后端分档：本地小模型的相似度分布整体低于 bge-m3。"""
+    from app.indexing.embedder import get_embedder
+
+    if get_embedder(settings).backend_id.startswith("ollama"):
+        return settings.boundary_min_sim
+    return settings.boundary_min_sim_local
 
 
 def _weak_hits(hits: list[Hit], settings) -> bool:
     """向量相似度整体偏低时视为弱命中；纯关键词命中（sim=None）不参与判断。"""
     sims = [h.sim for h in hits if h.sim is not None]
-    return bool(sims) and max(sims) < settings.boundary_min_sim
+    return bool(sims) and max(sims) < _boundary_min_sim(settings)
 
 
 async def chat_stream(
@@ -116,6 +135,7 @@ async def chat_stream(
     settings=None,
     session_id: str | None = None,
     profile: str | None = None,
+    folder: str | None = None,
 ) -> AsyncIterator[dict]:
     settings = settings or get_settings()
     gateway = LLMGateway(settings, profile)
@@ -149,13 +169,15 @@ async def chat_stream(
         yield {"event": "done", "data": _done(None, "", sid, mid, model=gateway.last_model)}
         return
 
-    retrieval = await run_retrieval(retrieval_query, settings.retrieval_mode, settings, top_k)
+    retrieval = await run_retrieval(
+        retrieval_query, settings.retrieval_mode, settings, top_k, folder=folder
+    )
     for step in retrieval["trace"]:
         yield {"event": "trace", "data": step}
 
     plan = retrieval["plan"]
     hits = retrieval["hits"]
-    scope = _scope(settings)
+    scope = _scope(settings, folder)
 
     if plan.get("skip_retrieval"):
         parts = []
@@ -189,7 +211,7 @@ async def chat_stream(
         retrieval["trace"] = retrieval["trace"] + [{"stage": "boundary", "result": reason}]
         yield {"event": "trace", "data": retrieval["trace"][-1]}
         async for ev in _boundary_reply(
-            message, gateway, settings, sid, retrieval["trace"], scope, history
+            message, gateway, settings, sid, retrieval["trace"], scope, history, hits
         ):
             yield ev
         return
@@ -198,7 +220,7 @@ async def chat_stream(
     prefix = ""
     started = False
     try:
-        async for delta in stream_answer(message, hits, gateway, history):
+        async for delta in stream_answer(message, hits, gateway, history, retrieval["intent"]):
             if not started:
                 prefix += delta
                 if _refusal_head(prefix):
@@ -209,7 +231,7 @@ async def chat_stream(
                         "data": {"stage": "boundary", "result": "资料未覆盖，转通用知识回答"},
                     }
                     async for ev in _boundary_reply(
-                        message, gateway, settings, sid, retrieval["trace"], scope, history
+                        message, gateway, settings, sid, retrieval["trace"], scope, history, hits
                     ):
                         yield ev
                     return
@@ -242,7 +264,9 @@ async def chat_stream(
         )
         try:
             yield {"event": "token", "data": {"delta": "\n——引用补正——\n"}}
-            async for delta in stream_answer(retry_question, hits, gateway, history):
+            async for delta in stream_answer(
+                retry_question, hits, gateway, history, retrieval["intent"]
+            ):
                 answer_parts.append(delta)
                 yield {"event": "token", "data": {"delta": delta}}
         except UpstreamError:
@@ -277,6 +301,7 @@ async def _boundary_reply(
     trace: list,
     scope: list[str],
     history: list[dict] | None = None,
+    weak_hits: list[Hit] | None = None,
 ) -> AsyncIterator[dict]:
     """库外问题：有生成模型则用通用知识回答并标注；无模型则拒答并说明检索范围。"""
     parts: list[str] = []
@@ -322,6 +347,13 @@ async def _boundary_reply(
         parts = [fallback]
         yield {"event": "token", "data": {"delta": fallback}}
         boundary, reason = "refused", "检索无有效命中，答案为拒答说明"
+
+    if weak_hits:
+        hint = "\n\n可能相关的章节：" + "；".join(
+            f"{h.doc_name} · {h.section}" for h in weak_hits[:3]
+        )
+        parts.append(hint)
+        yield {"event": "token", "data": {"delta": hint}}
 
     mid = session_store.append_message(
         settings.session_db,
@@ -404,8 +436,14 @@ async def _confidence(
     if not has_valid and hits:
         level = _downgrade(level)
         reasons.append("回答缺少有效引用，已降档")
-    # 有有效引用且检索置信度高时，不允许自评直接把结果打到 low
-    floor = "mid" if has_valid and sims and max(sims) >= settings.conf_high else "low"
+    # 有有效引用且检索置信度高时，不允许自评直接把结果打到 low；
+    # 纯关键词精确命中（sim=None）时同样保底 mid，避免故障码类正确回答被判低置信
+    keyword_only = bool(hits) and not sims
+    floor = (
+        "mid"
+        if has_valid and (keyword_only or (sims and max(sims) >= settings.conf_high))
+        else "low"
+    )
     if gateway.configured and settings.retrieval_mode == "adaptive":
         self_eval = await _self_eval(question, answer, gateway)
         if self_eval:

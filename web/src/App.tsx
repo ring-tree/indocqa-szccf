@@ -79,6 +79,13 @@ export default function App() {
     void refreshSessions();
   }, [refreshSessions]);
 
+  const refreshKb = useCallback(() => {
+    fetch("/api/health")
+      .then((r) => r.json())
+      .then((d) => setKb(d?.kb ?? null))
+      .catch(() => setKb(null));
+  }, []);
+
   const newChat = useCallback(() => {
     setActiveId(null);
     setTab("chat");
@@ -182,11 +189,8 @@ export default function App() {
 
   useEffect(() => {
     void refreshSessions(true);
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then((d) => setKb(d?.kb ?? null))
-      .catch(() => setKb(null));
-  }, [refreshSessions]);
+    refreshKb();
+  }, [refreshSessions, refreshKb]);
 
   useEffect(() => {
     if (!sidebarOpen) return;
@@ -299,8 +303,9 @@ export default function App() {
             onRefreshSessions={refreshSessionsOnly}
             className={tab === "chat" ? "" : "hidden"}
             examples={EXAMPLES}
+            active={tab === "chat"}
           />
-          <DocsView className={tab === "docs" ? "" : "hidden"} />
+          <DocsView className={tab === "docs" ? "" : "hidden"} onChanged={refreshKb} />
         </main>
       </div>
     </div>
