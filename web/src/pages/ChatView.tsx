@@ -635,14 +635,18 @@ function ChatView({
           </div>
         )}
 
-        {messages.map((m, i) => (
-          <Message
-            key={i}
-            message={m}
-            anchor={`msg-${i}`}
-            onRetry={m.error ? retryLast : undefined}
-          />
-        ))}
+        {messages.length > 0 && (
+          <div className="ui-thread">
+            {messages.map((m, i) => (
+              <Message
+                key={i}
+                message={m}
+                anchor={`msg-${i}`}
+                onRetry={m.error ? retryLast : undefined}
+              />
+            ))}
+          </div>
+        )}
         <div ref={bottomRef} />
       </section>
 
