@@ -9,6 +9,7 @@ import time
 
 from app.core.config import get_settings
 from app.indexing import store
+from app.indexing.lock import write_guard
 from app.indexing.manifest import Manifest
 from app.parsing.chunker import build_chunks
 from app.parsing.loader import MD_EXTS, load_document
@@ -22,7 +23,6 @@ def ingest_file(path: pathlib.Path, settings=None, stored_name: str | None = Non
     started = time.perf_counter()
     content_hash = _hash_of(path)
     manifest = Manifest(pathlib.Path(settings.chroma_dir) / "manifest.json")
-    _ensure_backend_match(settings, manifest)
     existed = manifest.has_hash(content_hash)
     if existed:
         info = manifest.get(existed)
@@ -34,40 +34,43 @@ def ingest_file(path: pathlib.Path, settings=None, stored_name: str | None = Non
             "durationMs": int((time.perf_counter() - started) * 1000),
             "duplicated": True,
         }
+    # 去重先于后端校验：本地模式下重复上传已存在文档应返回“已存在”，而不是 40902
+    with write_guard(settings):
+        _ensure_backend_match(settings, manifest)
 
-    doc = load_document(path)
-    children, parents = build_chunks(doc)
-    if not children:
+        doc = load_document(path)
+        children, parents = build_chunks(doc)
+        if not children:
+            return {
+                "docId": doc.doc_id,
+                "filename": doc.filename,
+                "pages": doc.pages,
+                "chunks": 0,
+                "durationMs": 0,
+                "duplicated": False,
+            }
+        store.add_children(settings, children, parents, doc.filename)
+        manifest.upsert(
+            doc.doc_id,
+            {
+                "filename": doc.filename,
+                "hash": content_hash,
+                "pages": doc.pages,
+                "chunks": len(children),
+                "tables": len(doc.tables),
+                "stored_name": stored_name,
+                "backend": store.get_embedder(settings).backend_id,
+            },
+        )
+        manifest.save()
         return {
             "docId": doc.doc_id,
             "filename": doc.filename,
             "pages": doc.pages,
-            "chunks": 0,
-            "durationMs": 0,
+            "chunks": len(children),
+            "durationMs": int((time.perf_counter() - started) * 1000),
             "duplicated": False,
         }
-    store.add_children(settings, children, parents, doc.filename)
-    manifest.upsert(
-        doc.doc_id,
-        {
-            "filename": doc.filename,
-            "hash": content_hash,
-            "pages": doc.pages,
-            "chunks": len(children),
-            "tables": len(doc.tables),
-            "stored_name": stored_name,
-            "backend": store.get_embedder(settings).backend_id,
-        },
-    )
-    manifest.save()
-    return {
-        "docId": doc.doc_id,
-        "filename": doc.filename,
-        "pages": doc.pages,
-        "chunks": len(children),
-        "durationMs": int((time.perf_counter() - started) * 1000),
-        "duplicated": False,
-    }
 
 
 def ingest_dir(directory: pathlib.Path, settings=None) -> list[dict]:
@@ -113,7 +116,8 @@ def main(argv: list[str]) -> int:
     if "--rebuild" in args:
         import shutil
 
-        shutil.rmtree(pathlib.Path(settings.chroma_dir), ignore_errors=True)
+        with write_guard(settings):
+            shutil.rmtree(pathlib.Path(settings.chroma_dir), ignore_errors=True)
         print(f"已清空向量库目录 {settings.chroma_dir}，开始全量重建")
         args = [a for a in args if a != "--rebuild"]
     target = pathlib.Path(args[0]) if args else pathlib.Path(settings.corpus_dir)

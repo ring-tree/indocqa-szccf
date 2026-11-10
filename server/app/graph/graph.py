@@ -19,6 +19,7 @@ from app.retrieval.searcher import Hit, search
 class GState(TypedDict, total=False):
     question: str
     mode: str
+    top_k_override: int | None
     intent: str
     entities: list
     plan: dict
@@ -39,6 +40,9 @@ def _trace(state: dict, stage: str, **detail) -> None:
 def classify_node(state: GState) -> dict:
     result = classify(state["question"])
     plan = plan_for(result.intent, state["mode"], get_settings())
+    override = state.get("top_k_override")
+    if override:
+        plan = {**plan, "top_k": override, "label": f"{plan['label']} · top{override}"}
     return {
         "intent": result.intent,
         "entities": result.entities,
@@ -183,9 +187,11 @@ def get_compiled_graph():
     return _compiled
 
 
-async def run_retrieval(question: str, mode: str, settings=None) -> dict:
+async def run_retrieval(question: str, mode: str, settings=None, top_k: int | None = None) -> dict:
     """执行状态图，返回最终状态（plan / intent / hits / trace）。"""
-    final = await get_compiled_graph().ainvoke({"question": question, "mode": mode})
+    final = await get_compiled_graph().ainvoke(
+        {"question": question, "mode": mode, "top_k_override": top_k}
+    )
     hits = [h for h in final.get("hits", []) if isinstance(h, Hit)]
     return {
         "intent": final.get("intent", "general"),

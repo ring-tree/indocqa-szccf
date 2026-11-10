@@ -4,6 +4,7 @@ RRF（Reciprocal Rank Fusion）只依赖排名而不依赖分数尺度，
 对语义（向量）与精确匹配（BM25，故障码/型号/术语缩写）两类信号无偏融合。
 """
 
+import re
 from dataclasses import dataclass
 
 from app.core.config import get_settings
@@ -12,6 +13,17 @@ from app.indexing.bm25_index import get_bm25
 
 RRF_K = 60
 EXPAND = 3  # 两路召回各取 top_k * EXPAND 再融合
+CODE_BOOST = 0.02  # 故障码/型号精确命中时叠加到 RRF 分数
+_CODE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{1,4}[-_]?\d{1,4}(?![A-Za-z0-9])")
+
+
+def _code_bonus(query: str, text: str) -> float:
+    """故障码/型号（E-05 / E05 / P4）精确命中加权，弥补 BM25 被高频词稀释。"""
+    wanted = {c.upper().replace("-", "").replace("_", "") for c in _CODE.findall(query)}
+    if not wanted:
+        return 0.0
+    found = {c.upper().replace("-", "").replace("_", "") for c in _CODE.findall(text)}
+    return CODE_BOOST if wanted & found else 0.0
 
 
 @dataclass
@@ -78,10 +90,14 @@ def search(
         by_id[h["chunk_id"]] = h
 
     hits: list[Hit] = []
-    for cid, rrf in sorted(ranks.items(), key=lambda kv: kv[1], reverse=True)[:top_k]:
+    candidates: list[tuple[str, float]] = []
+    for cid, rrf in ranks.items():
         raw = by_id.get(cid)
         if raw is None:
             continue
+        candidates.append((cid, rrf + _code_bonus(query, raw["text"])))
+    for cid, rrf in sorted(candidates, key=lambda kv: kv[1], reverse=True)[:top_k]:
+        raw = by_id[cid]
         parent = store.get_parent_text(settings, raw["doc_id"], raw["section"])
         hits.append(
             Hit(
@@ -98,4 +114,5 @@ def search(
                 parent_text=parent,
             )
         )
+    hits.sort(key=lambda h: h.rrf, reverse=True)
     return hits

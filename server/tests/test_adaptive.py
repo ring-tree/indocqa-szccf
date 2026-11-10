@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.indexing import store
 from app.indexing.ingest import ingest_file
 from app.retrieval.intents import classify
+from app.retrieval.searcher import _code_bonus
 from app.retrieval.terms import build_clusters, expand_query, load_clusters
 
 CORPUS = pathlib.Path(__file__).resolve().parents[2] / "data" / "corpus"
@@ -40,6 +41,7 @@ def test_intent_classification_five_types():
     assert classify("MTBF 是什么意思").intent == "term"
     assert classify("LUB 更换的保养周期是多少小时？").intent == "param"
     assert classify("空压机报错 E-05 应该怎么处理？").intent == "fault"
+    assert classify("VPN 频繁掉线是什么原因").intent == "fault"
     assert classify("如何更换空气过滤器滤芯").intent == "procedure"
     assert classify("MTBF 和平均无故障时间是同一个指标吗").intent == "multihop"
 
@@ -47,6 +49,12 @@ def test_intent_classification_five_types():
 def test_intent_chitchat_and_general():
     assert classify("你好").intent == "chitchat"
     assert classify("介绍一下储气罐的选型思路").intent == "general"
+
+
+def test_code_bonus_matches_dash_alias():
+    assert _code_bonus("报错 E-05 怎么处理", "故障代码 E05：排气温度过高") > 0
+    assert _code_bonus("报错 E-05 怎么处理", "与故障码无关的段落") == 0
+    assert _code_bonus("普通问题", "E-05 故障代码") == 0
 
 
 # ---- 术语归一（T2.2）----

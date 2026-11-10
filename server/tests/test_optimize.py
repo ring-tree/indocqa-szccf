@@ -23,6 +23,7 @@ SEED = pathlib.Path(__file__).resolve().parents[2] / "data" / "terms" / "seed.js
 def tmp_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("INDOCQA_CHROMA_DIR", str(tmp_path / "chroma"))
     monkeypatch.setenv("INDOCQA_UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setenv("INDOCQA_SESSION_DB", str(tmp_path / "sessions.db"))
     monkeypatch.setenv("INDOCQA_EMBED_BACKEND", "local")
     terms_dir = tmp_path / "terms"
     terms_dir.mkdir()
@@ -92,16 +93,18 @@ def test_noise_cluster_filtered_by_frequency(tmp_settings):
 async def test_citation_retry_emits_trace(tmp_settings, monkeypatch):
     from app.graph import pipeline
 
-    async def fake_answer_no_citation(question, hits, gateway):
+    async def fake_answer_no_citation(question, hits, gateway, history=None):
         yield "没有任何引用标记的回答。"
 
-    async def fake_answer_with_citation(question, hits, gateway):
+    async def fake_answer_with_citation(question, hits, gateway, history=None):
         yield "补正后的回答 [1]。"
 
     ingest_file(FIXTURE, tmp_settings)
     monkeypatch.setattr(pipeline, "stream_answer", fake_answer_no_citation)
     events = []
-    async for ev in pipeline.chat_stream("MTBF 是什么", "kb", settings=tmp_settings):
+    async for ev in pipeline.chat_stream(
+        "LUB 更换的保养周期是多少小时？", "kb", settings=tmp_settings
+    ):
         events.append(ev)
     stages = [e["data"].get("stage") for e in events if e["event"] == "trace"]
     assert "citation_retry" in stages, "缺引用未触发补正"
@@ -110,7 +113,9 @@ async def test_citation_retry_emits_trace(tmp_settings, monkeypatch):
 
     monkeypatch.setattr(pipeline, "stream_answer", fake_answer_with_citation)
     events2 = []
-    async for ev in pipeline.chat_stream("MTBF 是什么", "kb", settings=tmp_settings):
+    async for ev in pipeline.chat_stream(
+        "LUB 更换的保养周期是多少小时？", "kb", settings=tmp_settings
+    ):
         events2.append(ev)
     stages2 = [e["data"].get("stage") for e in events2 if e["event"] == "trace"]
     assert "citation_retry" not in stages2, "有引用不应触发补正"

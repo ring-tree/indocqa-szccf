@@ -1,9 +1,10 @@
-"""问答编排：LangGraph 检索状态图 + 流式生成 + 事后置信度与引用校验。
+"""问答编排：LangGraph 检索状态图 + 流式生成 + 会话上下文 + 事后置信度。
 
 SSE 事件顺序：trace* → sources → token* → done（错误时以 error 事件收尾）。
 """
 
 import asyncio
+import pathlib
 import re
 from collections.abc import AsyncIterator
 
@@ -13,13 +14,35 @@ from app.core.llm import LLMGateway
 from app.generation.answerer import REFUSAL_TEMPLATE, stream_answer
 from app.graph.graph import run_retrieval
 from app.indexing import store
+from app.indexing.manifest import Manifest
 from app.retrieval.searcher import Hit
+from app.session import store as session_store
 
 _LEVEL = {"low": 0, "mid": 1, "high": 2}
 _CITED = re.compile(r"\[(\d+)\]")
+_REFER = re.compile(r"它|这个|那个|该|其|上面|刚才|前面|这两|这三")
+_REFUSAL_HEAD = re.compile(
+    r"^(?:现有)?资料(?:中)?(?:并)?未(?:覆盖|涉及|提及)|^无法(?:根据|回答)|^(?:很)?抱歉|^没有找到"
+)
+_BOUNDARY_LABEL = "【非知识库内容】\n"
+_LABEL_ECHO = re.compile(r"^\s*(?:\*{0,2}(?:【\s*非知识库内容\s*】|非知识库内容)[:：]?\*{0,2}\s*)+")
 _CHITCHAT_SYSTEM = (
     "你是企业知识库助手的门面。对寒暄给出简短友好的回应，一两句话即可，不涉及任何技术内容。"
 )
+_DIRECT_SYSTEM = (
+    "你是工阅 IndocQA 的智能助手。回答简洁、准确，与用户语言一致；不确定时明确说明，不要编造。"
+)
+_GENERAL_SYSTEM = (
+    "你是工阅 IndocQA 的智能助手。当前企业知识库没有覆盖用户问题。"
+    "请用通用知识回答，回答开头已由系统标注【非知识库内容】，不要重复标注；"
+    "不得编造引用编号，也不要声称内容来自知识库。"
+)
+
+
+def _refusal_head(text: str) -> bool:
+    """只识别“整段拒答”的开头；正文中途说某细节未覆盖不应触发通用回答。"""
+    clean = text.lstrip(" \n*#>-")
+    return bool(_REFUSAL_HEAD.search(clean[:60]))
 
 
 def _source_item(hit: Hit, idx: int) -> dict:
@@ -34,57 +57,176 @@ def _source_item(hit: Hit, idx: int) -> dict:
     }
 
 
+def _done(
+    level: str,
+    reason: str,
+    session_id: str | None = None,
+    message_id: int | None = None,
+    boundary: str | None = None,
+    scope: list[str] | None = None,
+    model: str | None = None,
+) -> dict:
+    data = {
+        "confidence": level,
+        "confidence_reason": reason,
+        "sessionId": session_id,
+        "messageId": message_id,
+        "boundary": boundary,
+        "model": model,
+    }
+    if scope is not None:
+        data["searched_scope"] = scope
+    return data
+
+
+def _history(session_id: str, settings) -> list[dict]:
+    rows = session_store.get_messages(
+        settings.session_db, session_id, limit=settings.session_history_turns * 2
+    )
+    return [{"role": row["role"], "content": row["content"]} for row in rows]
+
+
+def _context_query(message: str, history: list[dict]) -> str:
+    """短问句或含指代词时补上一轮用户问题，避免“它的额定值”这类追问丢失主语。"""
+    last_user = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
+    if last_user and last_user != message and (len(message) < 12 or _REFER.search(message)):
+        return f"{last_user} {message}"
+    return message
+
+
+def _scope(settings) -> list[str]:
+    """已入库文档名，用于库外回答说明“检索过什么”。"""
+    try:
+        docs = Manifest(pathlib.Path(settings.chroma_dir) / "manifest.json").documents()
+    except (OSError, ValueError, KeyError):
+        return []
+    return [d.get("filename", "") for d in docs.values() if d.get("filename")][:10]
+
+
+def _weak_hits(hits: list[Hit], settings) -> bool:
+    """向量相似度整体偏低时视为弱命中；纯关键词命中（sim=None）不参与判断。"""
+    sims = [h.sim for h in hits if h.sim is not None]
+    return bool(sims) and max(sims) < settings.boundary_min_sim
+
+
 async def chat_stream(
-    message: str, mode: str, top_k: int | None = None, settings=None
+    message: str,
+    mode: str,
+    top_k: int | None = None,
+    settings=None,
+    session_id: str | None = None,
+    profile: str | None = None,
 ) -> AsyncIterator[dict]:
     settings = settings or get_settings()
-    gateway = LLMGateway(settings)
+    gateway = LLMGateway(settings, profile)
+
+    session = session_store.ensure_session(settings.session_db, session_id, message)
+    sid = session["id"]
+    history = _history(sid, settings)
+    session_store.append_message(settings.session_db, sid, "user", message)
+    retrieval_query = _context_query(message, history)
 
     if mode == "direct":
         if not gateway.configured:
             raise UpstreamError("直连模式需要配置模型网关（server/.env）")
+        parts: list[str] = []
         try:
-            async for delta in gateway.stream([{"role": "user", "content": message}]):
+            async for delta in gateway.stream(
+                [
+                    {"role": "system", "content": _DIRECT_SYSTEM},
+                    *history,
+                    {"role": "user", "content": message},
+                ]
+            ):
+                parts.append(delta)
                 yield {"event": "token", "data": {"delta": delta}}
         except UpstreamError as e:
             yield {"event": "error", "data": {"code": e.code, "message": e.message}}
             return
-        yield {"event": "done", "data": {"confidence": None, "confidence_reason": ""}}
+        mid = session_store.append_message(
+            settings.session_db, sid, "assistant", "".join(parts), model=gateway.last_model
+        )
+        yield {"event": "done", "data": _done(None, "", sid, mid, model=gateway.last_model)}
         return
 
-    retrieval = await run_retrieval(message, settings.retrieval_mode, settings)
+    retrieval = await run_retrieval(retrieval_query, settings.retrieval_mode, settings, top_k)
     for step in retrieval["trace"]:
         yield {"event": "trace", "data": step}
 
     plan = retrieval["plan"]
     hits = retrieval["hits"]
+    scope = _scope(settings)
 
     if plan.get("skip_retrieval"):
-        async for ev in _chitchat_reply(message, gateway):
+        parts = []
+        async for ev in _chitchat_reply(message, gateway, history):
+            parts.append(ev["data"]["delta"])
+            yield ev
+        mid = session_store.append_message(
+            settings.session_db,
+            sid,
+            "assistant",
+            "".join(parts),
+            trace=retrieval["trace"],
+            confidence="high",
+            confidence_reason="寒暄，无需检索",
+            model=gateway.last_model,
+        )
+        yield {
+            "event": "done",
+            "data": _done("high", "寒暄，无需检索", sid, mid, model=gateway.last_model),
+        }
+        return
+
+    weak = _weak_hits(hits, settings)
+    yield {
+        "event": "sources",
+        "data": {"items": [] if weak else [_source_item(h, i) for i, h in enumerate(hits, 1)]},
+    }
+
+    if not hits or weak:
+        reason = "检索相似度不足，按库外问题处理" if weak else "无有效命中，按库外问题处理"
+        retrieval["trace"] = retrieval["trace"] + [{"stage": "boundary", "result": reason}]
+        yield {"event": "trace", "data": retrieval["trace"][-1]}
+        async for ev in _boundary_reply(
+            message, gateway, settings, sid, retrieval["trace"], scope, history
+        ):
             yield ev
         return
 
-    yield {
-        "event": "sources",
-        "data": {"items": [_source_item(h, i) for i, h in enumerate(hits, 1)]},
-    }
-
-    if not hits:
-        yield {
-            "event": "token",
-            "data": {"delta": REFUSAL_TEMPLATE.format(sections="全部已入库文档")},
-        }
-        yield {"event": "done", "data": _done("low", "检索无有效命中，答案为拒答说明")}
-        return
-
     answer_parts: list[str] = []
+    prefix = ""
+    started = False
     try:
-        async for delta in stream_answer(message, hits, gateway):
+        async for delta in stream_answer(message, hits, gateway, history):
+            if not started:
+                prefix += delta
+                if _refusal_head(prefix):
+                    # 命中的块与问题无关、模型整段拒答：清空引用并转通用知识回答
+                    yield {"event": "sources", "data": {"items": []}}
+                    yield {
+                        "event": "trace",
+                        "data": {"stage": "boundary", "result": "资料未覆盖，转通用知识回答"},
+                    }
+                    async for ev in _boundary_reply(
+                        message, gateway, settings, sid, retrieval["trace"], scope, history
+                    ):
+                        yield ev
+                    return
+                if len(prefix) < 40:
+                    continue
+                answer_parts.append(prefix)
+                yield {"event": "token", "data": {"delta": prefix}}
+                started = True
+                continue
             answer_parts.append(delta)
             yield {"event": "token", "data": {"delta": delta}}
     except UpstreamError as e:
         yield {"event": "error", "data": {"code": e.code, "message": e.message}}
         return
+    if not started and prefix:
+        answer_parts.append(prefix)
+        yield {"event": "token", "data": {"delta": prefix}}
 
     answer = "".join(answer_parts)
     _cov, has_valid_citation = _citation_coverage(answer, hits)
@@ -100,7 +242,7 @@ async def chat_stream(
         )
         try:
             yield {"event": "token", "data": {"delta": "\n——引用补正——\n"}}
-            async for delta in stream_answer(retry_question, hits, gateway):
+            async for delta in stream_answer(retry_question, hits, gateway, history):
                 answer_parts.append(delta)
                 yield {"event": "token", "data": {"delta": delta}}
         except UpstreamError:
@@ -108,25 +250,121 @@ async def chat_stream(
         if answer_parts:
             answer = "".join(answer_parts)
 
+    answer_model = gateway.last_model  # 自评会再次调用网关，先记住回答实际使用的模型
     level, reason = await _confidence(message, answer, hits, gateway, settings)
-    yield {"event": "done", "data": _done(level, reason)}
+    mid = session_store.append_message(
+        settings.session_db,
+        sid,
+        "assistant",
+        answer,
+        sources=[_source_item(h, i) for i, h in enumerate(hits, 1)],
+        trace=retrieval["trace"],
+        confidence=level,
+        confidence_reason=reason,
+        model=answer_model,
+    )
+    yield {
+        "event": "done",
+        "data": _done(level, reason, sid, mid, None, scope, model=answer_model),
+    }
 
 
-async def _chitchat_reply(message: str, gateway: LLMGateway) -> AsyncIterator[dict]:
+async def _boundary_reply(
+    message: str,
+    gateway: LLMGateway,
+    settings,
+    session_id: str,
+    trace: list,
+    scope: list[str],
+    history: list[dict] | None = None,
+) -> AsyncIterator[dict]:
+    """库外问题：有生成模型则用通用知识回答并标注；无模型则拒答并说明检索范围。"""
+    parts: list[str] = []
+    boundary = "general"
+    reason = "知识库未覆盖，已用通用知识回答"
+    if gateway.configured:
+        parts.append(_BOUNDARY_LABEL)
+        yield {"event": "token", "data": {"delta": _BOUNDARY_LABEL}}
+        try:
+            first = True
+            buf = ""
+            async for delta in gateway.stream(
+                [
+                    {"role": "system", "content": _GENERAL_SYSTEM},
+                    *(history or []),
+                    {"role": "user", "content": message},
+                ]
+            ):
+                if first:
+                    buf += delta
+                    if len(buf) < 20:
+                        continue
+                    cleaned = _LABEL_ECHO.sub("", buf)
+                    if cleaned:
+                        parts.append(cleaned)
+                        yield {"event": "token", "data": {"delta": cleaned}}
+                    first = False
+                    continue
+                parts.append(delta)
+                yield {"event": "token", "data": {"delta": delta}}
+            if first and buf:
+                cleaned = _LABEL_ECHO.sub("", buf)
+                if cleaned:
+                    parts.append(cleaned)
+                    yield {"event": "token", "data": {"delta": cleaned}}
+        except UpstreamError:
+            fallback = REFUSAL_TEMPLATE.format(sections="、".join(scope) or "知识库")
+            parts = [fallback]
+            yield {"event": "token", "data": {"delta": fallback}}
+            boundary, reason = "refused", "通用回答失败，已回退拒答"
+    else:
+        fallback = REFUSAL_TEMPLATE.format(sections="、".join(scope) or "知识库")
+        parts = [fallback]
+        yield {"event": "token", "data": {"delta": fallback}}
+        boundary, reason = "refused", "检索无有效命中，答案为拒答说明"
+
+    mid = session_store.append_message(
+        settings.session_db,
+        session_id,
+        "assistant",
+        "".join(parts),
+        trace=trace,
+        confidence="low",
+        confidence_reason=reason,
+        boundary=boundary,
+        model=gateway.last_model if boundary == "general" else None,
+    )
+    yield {
+        "event": "done",
+        "data": _done(
+            "low",
+            reason,
+            session_id,
+            mid,
+            boundary,
+            scope,
+            model=gateway.last_model if boundary == "general" else None,
+        ),
+    }
+
+
+async def _chitchat_reply(
+    message: str, gateway: LLMGateway, history: list[dict]
+) -> AsyncIterator[dict]:
     if gateway.configured:
         try:
             async for delta in gateway.stream(
                 [
                     {"role": "system", "content": _CHITCHAT_SYSTEM},
+                    *history,
                     {"role": "user", "content": message},
                 ]
             ):
                 yield {"event": "token", "data": {"delta": delta}}
+            return
         except UpstreamError:
-            yield {"event": "token", "data": {"delta": "你好，有问题随时问我。"}}
-    else:
-        yield {"event": "token", "data": {"delta": "你好，有问题随时问我。"}}
-    yield {"event": "done", "data": {"confidence": "high", "confidence_reason": "寒暄，无需检索"}}
+            pass
+    yield {"event": "token", "data": {"delta": "你好，有问题随时问我。"}}
 
 
 def _downgrade(level: str) -> str:
@@ -166,15 +404,20 @@ async def _confidence(
     if not has_valid and hits:
         level = _downgrade(level)
         reasons.append("回答缺少有效引用，已降档")
+    # 有有效引用且检索置信度高时，不允许自评直接把结果打到 low
+    floor = "mid" if has_valid and sims and max(sims) >= settings.conf_high else "low"
     if gateway.configured and settings.retrieval_mode == "adaptive":
         self_eval = await _self_eval(question, answer, gateway)
         if self_eval:
             mapping = {"充分": "high", "部分": "mid", "不足": "low"}
             model_level = mapping.get(self_eval)
-            if model_level:
-                reasons.append(f"模型自评：资料{self_eval}")
-                if _LEVEL[model_level] < _LEVEL[level]:
-                    level = model_level
+            if model_level and _LEVEL[model_level] < _LEVEL[level]:
+                candidate = _downgrade(level) if model_level == "low" else model_level
+                if _LEVEL[candidate] < _LEVEL[floor]:
+                    candidate = floor
+                if candidate != level:
+                    reasons.append(f"模型自评：资料{self_eval}（至多降一档）")
+                    level = candidate
     return level, "；".join(reasons)
 
 
@@ -193,10 +436,6 @@ async def _self_eval(question: str, answer: str, gateway: LLMGateway) -> str | N
         if word in text:
             return word
     return None
-
-
-def _done(level: str, reason: str) -> dict:
-    return {"confidence": level, "confidence_reason": reason}
 
 
 def kb_is_empty(settings=None) -> bool:

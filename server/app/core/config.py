@@ -12,7 +12,15 @@ SERVER_ROOT = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="INDOCQA_", env_file=".env", extra="ignore")
 
-    @field_validator("chroma_dir", "upload_dir", "corpus_dir", "terms_file", "embed_cache_dir", mode="after")
+    @field_validator(
+        "chroma_dir",
+        "upload_dir",
+        "corpus_dir",
+        "terms_file",
+        "embed_cache_dir",
+        "session_db",
+        mode="after",
+    )
     @classmethod
     def _anchor_to_server(cls, value: str) -> str:
         """相对路径一律锚定到 server/ 目录，与运行时 cwd 无关。"""
@@ -45,12 +53,18 @@ class Settings(BaseSettings):
     chroma_dir: str = "data/chroma"
     corpus_dir: str = "../data/corpus"
     upload_dir: str = "data/uploads"
+    # 会话历史：SQLite 单文件，随 data/ 忽略；保留轮数与过期天数可按部署调整
+    session_db: str = "data/db/sessions.db"
+    session_history_turns: int = 6
+    session_ttl_days: int = 7
 
     # fixed=固定参数基线（评测对照组）；adaptive=意图路由+参数自适应
     retrieval_mode: str = "adaptive"
     top_k_default: int = 6
     sim_threshold: float = 0.20
     conf_high: float = 0.42
+    # 弱命中闸门：最高相似度低于该值时按“库外问题”处理（bge-m3 无关文本约 0.4–0.5）
+    boundary_min_sim: float = 0.50
     terms_file: str = "../data/terms/terms.json"
     use_rerank: bool = False
     # 消融实验开关：关闭后 adaptive 模式不再做查询侧术语扩展（索引侧打标保留，属部分消融）

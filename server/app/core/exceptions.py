@@ -46,10 +46,24 @@ class DocumentNotFoundError(AppError):
     http_status = 404
 
 
+class SessionNotFoundError(AppError):
+    """40403 指定会话不存在或已过期。"""
+
+    code = 40403
+    http_status = 404
+
+
 class BackendMismatchError(AppError):
     """40902 现有向量库与当前嵌入后端不一致，需重建后再入库。"""
 
     code = 40902
+    http_status = 409
+
+
+class ChromaBusyError(AppError):
+    """40903 同一向量库正在被另一个进程写入。"""
+
+    code = 40903
     http_status = 409
 
 

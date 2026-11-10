@@ -42,7 +42,13 @@ async def ingest(file: UploadFile) -> dict:
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / stored_name
     path.write_bytes(data)
-    result = await run_in_threadpool(ingest_file, path, None, stored_name)
+    try:
+        result = await run_in_threadpool(ingest_file, path, None, stored_name)
+    except Exception:
+        path.unlink(missing_ok=True)  # 入库失败不留孤儿上传文件
+        raise
+    if result.get("duplicated") or result.get("chunks", 0) == 0:
+        path.unlink(missing_ok=True)
     return {"data": result}
 
 
@@ -69,6 +75,7 @@ async def preview(file: UploadFile) -> dict:
         report = await run_in_threadpool(preview_document, path)
     finally:
         path.unlink(missing_ok=True)
+    report["filename"] = filename  # 临时文件前缀不应出现在用户看到的预检报告里
     return {"data": report}
 
 

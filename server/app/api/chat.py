@@ -8,9 +8,10 @@ from fastapi.responses import StreamingResponse
 
 from app.api.schemas import ChatRequest
 from app.core.config import get_settings
-from app.core.exceptions import KBEmptyError, UpstreamError
+from app.core.exceptions import KBEmptyError, ParamError, UpstreamError
 from app.core.llm import LLMGateway
 from app.graph import pipeline
+from app.session import store as session_store
 
 router = APIRouter(prefix="/api")
 
@@ -22,11 +23,23 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
 
     if req.mode == "kb" and pipeline.kb_is_empty(settings):
         raise KBEmptyError("知识库为空，请先入库文档（POST /api/kb/ingest）")
-    if req.mode == "direct" and not LLMGateway(settings).configured:
+    gateway = LLMGateway(settings, req.profile)
+    if req.profile and req.profile != "auto" and req.profile not in gateway.profile_ids:
+        raise ParamError(f"模型 profile 不存在或未配置: {req.profile}")
+    if req.mode == "direct" and not gateway.configured:
         raise UpstreamError("直连模式需要配置模型网关（server/.env）")
+    if req.session_id and not session_store.valid_id(req.session_id):
+        raise ParamError("sessionId 格式不合法")
 
     async def event_gen():
-        async for ev in pipeline.chat_stream(req.message, req.mode, req.top_k, settings):
+        async for ev in pipeline.chat_stream(
+            req.message,
+            req.mode,
+            req.top_k,
+            settings,
+            session_id=req.session_id,
+            profile=None if req.profile in (None, "auto") else req.profile,
+        ):
             if ev["event"] == "done":
                 ev["data"]["request_id"] = rid
             data = json.dumps(ev["data"], ensure_ascii=False)

@@ -19,6 +19,9 @@ import httpx
 _probe_cache: dict[str, tuple[float, bool]] = {}
 _PROBE_TTL = 30.0
 _BATCH = 32
+# auto 的粘性选择：一旦确定 ollama 就不再因单次探测抖动降级到 local，
+# 否则同一进程会在两个向量空间之间来回切换，检索结果不可复现。
+_AUTO_CHOICE: dict[str, float | str | None] = {"backend": None, "ts": 0.0}
 
 
 class BaseEmbedder:
@@ -65,7 +68,11 @@ def _materialize_portable(cache_dir: str, model_name: str) -> bool:
         dest = portable / f.name
         if not dest.exists():
             shutil.copyfile(f, dest)  # copyfile 天然解引用软链接
-    for junk in list(cache.glob("models--*")) + [cache / "blobs", cache / ".locks", cache / "CACHEDIR.TAG"]:
+    for junk in list(cache.glob("models--*")) + [
+        cache / "blobs",
+        cache / ".locks",
+        cache / "CACHEDIR.TAG",
+    ]:
         if junk.exists():
             shutil.rmtree(junk) if junk.is_dir() else junk.unlink()
     return True
@@ -125,12 +132,17 @@ class OllamaEmbedder(BaseEmbedder):
         vectors: list[list[float]] = []
         for start in range(0, len(texts), _BATCH):
             batch = texts[start : start + _BATCH]
-            resp = httpx.post(
-                f"{self.base_url}/api/embed",
-                json={"model": self.model, "input": batch},
-                timeout=300,
-            )
-            resp.raise_for_status()
+            try:
+                resp = httpx.post(
+                    f"{self.base_url}/api/embed",
+                    json={"model": self.model, "input": batch},
+                    timeout=300,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPError:
+                # Ollama 掉线时清掉粘性选择，下次请求重新探测并回退 local
+                _AUTO_CHOICE.update(backend=None, ts=0.0)
+                raise
             data = resp.json()
             if "embeddings" not in data:
                 raise RuntimeError(f"Ollama 嵌入响应缺少 embeddings 字段: {list(data)}")
@@ -174,14 +186,24 @@ def _ollama_available(base_url: str, model: str) -> bool:
 _embedder_cache: dict[tuple, BaseEmbedder] = {}
 
 
+def _resolve_auto(settings) -> str:
+    """auto 解析：local 每 30s 允许重新探测（等 Ollama 启动），ollama 选定后保持粘性。"""
+    now = time.monotonic()
+    if _AUTO_CHOICE["backend"] == "ollama":
+        return "ollama"
+    if _AUTO_CHOICE["backend"] == "local" and now - float(_AUTO_CHOICE["ts"] or 0) < _PROBE_TTL:
+        return "local"
+    if _ollama_available(settings.ollama_base_url, settings.ollama_embed_model):
+        _AUTO_CHOICE.update(backend="ollama", ts=now)
+        return "ollama"
+    _AUTO_CHOICE.update(backend="local", ts=now)
+    return "local"
+
+
 def get_embedder(settings) -> BaseEmbedder:
     backend = settings.embed_backend
     if backend == "auto":
-        backend = (
-            "ollama"
-            if _ollama_available(settings.ollama_base_url, settings.ollama_embed_model)
-            else "local"
-        )
+        backend = _resolve_auto(settings)
     if backend == "ollama":
         key = ("ollama", settings.ollama_base_url, settings.ollama_embed_model)
         if key not in _embedder_cache:
@@ -193,7 +215,12 @@ def get_embedder(settings) -> BaseEmbedder:
         if key not in _embedder_cache:
             _embedder_cache[key] = MiniLMEmbedder()
     else:
-        key = ("local", settings.embed_local_model, settings.embed_local_batch, settings.embed_cache_dir)
+        key = (
+            "local",
+            settings.embed_local_model,
+            settings.embed_local_batch,
+            settings.embed_cache_dir,
+        )
         if key not in _embedder_cache:
             _embedder_cache[key] = LocalEmbedder(
                 settings.embed_local_model, settings.embed_local_batch, settings.embed_cache_dir

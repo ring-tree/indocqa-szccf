@@ -22,9 +22,11 @@ class HealthResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    session_id: str | None = Field(default=None, alias="sessionId")
+    session_id: str | None = Field(default=None, alias="sessionId", max_length=64)
     message: str = Field(min_length=1, max_length=2000)
     mode: str = Field(pattern="^(direct|kb)$")
     top_k: int | None = Field(default=None, ge=1, le=20, alias="topK")
+    # auto / primary / backup；不传等同 auto
+    profile: str | None = Field(default=None, max_length=32)
 
     model_config = {"populate_by_name": True}

@@ -43,6 +43,7 @@ def client(tmp_path, monkeypatch):
     shutil.copy(seed, terms_dir / "seed.json")
     monkeypatch.setenv("INDOCQA_CHROMA_DIR", str(tmp_path / "chroma"))
     monkeypatch.setenv("INDOCQA_UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setenv("INDOCQA_SESSION_DB", str(tmp_path / "sessions.db"))
     monkeypatch.setenv("INDOCQA_EMBED_BACKEND", "local")
     monkeypatch.setenv("INDOCQA_TERMS_FILE", str(terms_dir / "terms.json"))
     get_settings.cache_clear()
@@ -102,6 +103,7 @@ def test_direct_without_gateway_returns_42901(client, monkeypatch):
 def test_kb_empty_returns_40401(tmp_path, monkeypatch):
     monkeypatch.setenv("INDOCQA_CHROMA_DIR", str(tmp_path / "fresh_chroma"))
     monkeypatch.setenv("INDOCQA_UPLOAD_DIR", str(tmp_path / "fresh_uploads"))
+    monkeypatch.setenv("INDOCQA_SESSION_DB", str(tmp_path / "fresh_sessions.db"))
     monkeypatch.setenv("INDOCQA_EMBED_BACKEND", "local")
     get_settings.cache_clear()
     store._client.cache_clear()

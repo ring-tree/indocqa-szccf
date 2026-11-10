@@ -8,6 +8,7 @@ import pathlib
 from functools import lru_cache
 
 from app.indexing.embedder import get_embedder
+from app.indexing.lock import write_guard
 from app.parsing.models import ChildChunk, ParentChunk
 
 
@@ -25,7 +26,13 @@ def _collection(settings):
     embedder = get_embedder(settings)
     return _client(str(pathlib.Path(settings.chroma_dir))).get_or_create_collection(
         name=f"indocqa_{embedder.backend_id}",
-        metadata={"hnsw:space": "cosine"},
+        metadata={
+            "hnsw:space": "cosine",
+            # 小库默认参数在增删/重启后偶发漏召回；提高构图与查询 ef 换取稳定召回
+            "hnsw:construction_ef": 200,
+            "hnsw:search_ef": 200,
+            "hnsw:M": 32,
+        },
     )
 
 
@@ -51,37 +58,38 @@ def add_children(
 ) -> None:
     from app.indexing.bm25_index import get_bm25
 
-    embedder = get_embedder(settings)
-    embeddings = embedder.embed([c.text for c in children])
-    metadatas = []
-    for c in children:
-        meta: dict = {
-            "doc_id": c.doc_id,
-            "doc_name": doc_name,
-            "section": c.section,
-            "kind": c.kind,
-        }
-        if c.page is not None:
-            meta["page"] = c.page
-        if c.table_no:
-            meta["table_no"] = c.table_no
-        metadatas.append(meta)
-    _collection(settings).add(
-        ids=[c.chunk_id for c in children],
-        embeddings=embeddings,
-        documents=[c.text for c in children],
-        metadatas=metadatas,
-    )
-    store = _load_parents(settings)
-    for p in parents:
-        store[p.parent_id] = {
-            "doc_id": p.doc_id,
-            "section": p.section,
-            "page_start": p.page_start,
-            "text": p.text,
-        }
-    _save_parents(settings, store)
-    get_bm25(settings).update({c.chunk_id: f"{c.section}\n{c.text}" for c in children})
+    with write_guard(settings):
+        embedder = get_embedder(settings)
+        embeddings = embedder.embed([c.text for c in children])
+        metadatas = []
+        for c in children:
+            meta: dict = {
+                "doc_id": c.doc_id,
+                "doc_name": doc_name,
+                "section": c.section,
+                "kind": c.kind,
+            }
+            if c.page is not None:
+                meta["page"] = c.page
+            if c.table_no:
+                meta["table_no"] = c.table_no
+            metadatas.append(meta)
+        _collection(settings).add(
+            ids=[c.chunk_id for c in children],
+            embeddings=embeddings,
+            documents=[c.text for c in children],
+            metadatas=metadatas,
+        )
+        store = _load_parents(settings)
+        for p in parents:
+            store[p.parent_id] = {
+                "doc_id": p.doc_id,
+                "section": p.section,
+                "page_start": p.page_start,
+                "text": p.text,
+            }
+        _save_parents(settings, store)
+        get_bm25(settings).update({c.chunk_id: f"{c.section}\n{c.text}" for c in children})
 
 
 def query(settings, query_text: str, top_k: int) -> list[dict]:
@@ -147,10 +155,11 @@ def get_by_ids(settings, chunk_ids: list[str]) -> list[dict]:
 def delete_doc(settings, doc_id: str) -> None:
     from app.indexing.bm25_index import get_bm25
 
-    _collection(settings).delete(where={"doc_id": doc_id})
-    parents = {pid: p for pid, p in _load_parents(settings).items() if p["doc_id"] != doc_id}
-    _save_parents(settings, parents)
-    get_bm25(settings).remove_doc(doc_id)
+    with write_guard(settings):
+        _collection(settings).delete(where={"doc_id": doc_id})
+        parents = {pid: p for pid, p in _load_parents(settings).items() if p["doc_id"] != doc_id}
+        _save_parents(settings, parents)
+        get_bm25(settings).remove_doc(doc_id)
 
 
 def is_empty(settings) -> bool:

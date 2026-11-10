@@ -11,7 +11,9 @@ _CHITCHAT = re.compile(
     r"^(你好|您好|hi|hello|嗨|谢谢|感谢|在吗|再见|早上好|下午好|晚上好)\b", re.IGNORECASE
 )
 _FAULT = re.compile(
-    r"报错|故障|错误码|错误代码|异常|报警|警报|fault code|error code", re.IGNORECASE
+    r"报错|故障|错误码|错误代码|异常|报警|警报|掉线|断连|断线|无法连接|无法访问|失败|超时|"
+    r"死机|卡死|闪退|fault code|error code",
+    re.IGNORECASE,
 )
 _FAULT_CODE = re.compile(r"\b[Ee][-]?\d{2,3}\b")
 _PARAM = re.compile(
