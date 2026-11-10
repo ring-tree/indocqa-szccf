@@ -12,7 +12,7 @@ from app.indexing import store
 from app.indexing.folders import normalize_display_names
 from app.indexing.ingest import ingest_file
 from app.indexing.manifest import Manifest
-from app.indexing.moves import batch_move
+from app.indexing.moves import batch_move, undo_move
 from app.main import create_app
 from app.retrieval.searcher import search
 
@@ -52,13 +52,20 @@ def test_multi_folder_scope_search(tmp_settings, tmp_path):
     ingest_file(c, tmp_settings, folder="行业标准/储气")
 
     hits = search(
-        "MTBF 8000 小时", top_k=6, settings=tmp_settings, folders=["设备手册", "评测夹具"]
+        "MTBF 8000 小时",
+        top_k=6,
+        settings=tmp_settings,
+        folders=["设备手册/螺杆", "评测夹具"],
     )
     assert hits
     assert all(h.folder in {"设备手册/螺杆", "评测夹具"} for h in hits)
     assert any(h.doc_name == "b.md" for h in hits)
 
-    only_c = search("0.8 MPa", top_k=6, settings=tmp_settings, folders=["行业标准"])
+    # 检索范围按所选目录精确匹配：选中父目录不再自动包含子目录
+    assert search("LUB 4000 小时", top_k=6, settings=tmp_settings, folders=["设备手册"]) == []
+    assert search("0.8 MPa", top_k=6, settings=tmp_settings, folders=["行业标准"]) == []
+
+    only_c = search("0.8 MPa", top_k=6, settings=tmp_settings, folders=["行业标准/储气"])
     assert only_c and all(h.folder == "行业标准/储气" for h in only_c)
 
 
@@ -180,6 +187,90 @@ def test_batch_move_multiple_to_leaf(tmp_settings, tmp_path):
     manifest = Manifest(Manifest.path_for(tmp_settings))
     assert manifest.get(first)["folder"] == "设备手册/螺杆空压机"
     assert manifest.get(second)["folder"] == "设备手册/螺杆空压机"
+
+
+def test_batch_move_all_documents_from_root(tmp_settings, tmp_path):
+    """根目录全选：多来源且含已在目标目录的文档，其余文档仍应移动。"""
+    specs = [
+        ("设备手册/螺杆空压机", "螺杆"),
+        ("设备手册/无油空压机", "无油"),
+        ("行业标准/压缩空气系统", "标准"),
+        ("评测夹具", "夹具"),
+    ]
+    ids = []
+    for index, (folder, title) in enumerate(specs):
+        path = _md(tmp_path / f"doc{index}.md", title, f"LUB {index} 小时。")
+        ids.append(ingest_file(path, tmp_settings, folder=folder)["docId"])
+
+    result = batch_move(tmp_settings, ids, "设备手册/螺杆空压机")
+    assert result["skipped"] == [ids[0]]
+    assert sorted(result["moved"]) == sorted(ids[1:])
+    assert result["failed"] == []
+
+
+def test_batch_move_same_folder_is_noop(tmp_settings, tmp_path):
+    path = _md(tmp_path / "same.md", "同目录", "LUB 4000 小时。")
+    doc_id = ingest_file(path, tmp_settings, folder="评测夹具")["docId"]
+
+    result = batch_move(tmp_settings, [doc_id], "评测夹具")
+    assert result["moved"] == []
+    assert result["skipped"] == [doc_id]
+    assert result["operationId"] is None
+
+
+def test_batch_move_cross_branch_and_depth(tmp_settings, tmp_path):
+    path = _md(tmp_path / "cross.md", "跨层级", "LUB 4000 小时。")
+    doc_id = ingest_file(path, tmp_settings, folder="设备手册/螺杆空压机")["docId"]
+
+    deeper = batch_move(tmp_settings, [doc_id], "行业标准/压缩空气系统/能效")
+    assert deeper["moved"] == [doc_id]
+    shallow = batch_move(tmp_settings, [doc_id], "评测夹具")
+    assert shallow["moved"] == [doc_id]
+    sibling = batch_move(tmp_settings, [doc_id], "设备手册/无油空压机")
+    assert sibling["moved"] == [doc_id]
+
+
+def test_batch_move_mixed_document_types(tmp_settings, tmp_path):
+    md = _md(tmp_path / "mixed.md", "Markdown", "LUB 4000 小时。")
+    txt = tmp_path / "mixed.txt"
+    txt.write_text("MTBF 8000 小时。", encoding="utf-8")
+    md_id = ingest_file(md, tmp_settings, folder="评测夹具")["docId"]
+    txt_id = ingest_file(txt, tmp_settings, folder="行业标准/压缩空气系统")["docId"]
+
+    result = batch_move(tmp_settings, [md_id, txt_id], "设备手册/无油空压机")
+    assert sorted(result["moved"]) == sorted([md_id, txt_id])
+    assert result["failed"] == []
+
+
+def test_batch_move_undo_restores_mixed_sources(tmp_settings, tmp_path):
+    first = ingest_file(
+        _md(tmp_path / "u1.md", "U1", "LUB 4000 小时。"), tmp_settings, folder="评测夹具"
+    )["docId"]
+    second = ingest_file(
+        _md(tmp_path / "u2.md", "U2", "MTBF 8000 小时。"),
+        tmp_settings,
+        folder="行业标准/压缩空气系统",
+    )["docId"]
+
+    result = batch_move(tmp_settings, [first, second], "设备手册/无油空压机")
+    assert sorted(result["moved"]) == sorted([first, second])
+    undone = undo_move(tmp_settings, result["operationId"])
+    assert sorted(undone["restored"]) == sorted([first, second])
+
+    manifest = Manifest(Manifest.path_for(tmp_settings))
+    assert manifest.get(first)["folder"] == "评测夹具"
+    assert manifest.get(second)["folder"] == "行业标准/压缩空气系统"
+    with pytest.raises(ParamError, match="已撤销"):
+        undo_move(tmp_settings, result["operationId"])
+
+
+def test_batch_move_reports_missing_documents(tmp_settings, tmp_path):
+    path = _md(tmp_path / "exists.md", "存在", "LUB 4000 小时。")
+    doc_id = ingest_file(path, tmp_settings, folder="评测夹具")["docId"]
+
+    result = batch_move(tmp_settings, [doc_id, "missing-doc"], "设备手册/无油空压机")
+    assert result["moved"] == [doc_id]
+    assert result["failed"] == [{"docId": "missing-doc", "reason": "文档不存在"}]
 
 
 def test_ingest_to_non_leaf_rejected(tmp_settings, tmp_path):

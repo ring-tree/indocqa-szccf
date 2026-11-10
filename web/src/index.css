@@ -1301,6 +1301,20 @@ button,
   color: var(--muted);
   font-size: 11px;
 }
+.ui-dialog-text {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.ui-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .ui-form-error {
   margin-top: 8px;
   color: var(--danger);

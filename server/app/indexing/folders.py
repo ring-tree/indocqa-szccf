@@ -130,24 +130,23 @@ def validate_folder_create(settings, path: str) -> str:
 
 
 def scope_paths(settings, folder: str | None = None, folders: list[str] | None = None) -> list[str]:
-    """合并单目录/多目录检索范围，展开为完整子树路径集合。"""
+    """合并单目录/多目录检索范围。
+
+    只匹配用户显式选择的目录，不再自动展开子目录；需要子目录时由前端
+    逐个勾选，避免“选中父目录即包含全部子目录”的隐式行为。
+    """
     requested: list[str] = []
     if folder:
         requested.append(folder)
     requested.extend(folders or [])
-    if not requested:
-        return []
-    known = Manifest(Manifest.path_for(settings)).folders()
     result: set[str] = set()
     for raw in requested:
         try:
             path = normalize_folder(raw, default=None)
         except FolderPathError:
             continue
-        if not path:
-            continue
-        result.add(path)
-        result.update(item for item in known if is_within(item, path))
+        if path:
+            result.add(path)
     return sorted(result)
 
 

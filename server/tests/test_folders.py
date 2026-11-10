@@ -66,9 +66,11 @@ def test_ingest_with_folder_and_scoped_search(tmp_settings, tmp_path):
     assert all(info.get("folder") for info in manifest.documents().values())
 
     scoped = search("MTBF 是什么", top_k=6, settings=tmp_settings, folder="行业标准")
-    assert scoped and all(h.folder == "行业标准/可靠性" for h in scoped)
+    assert scoped == []
+    exact = search("MTBF 是什么", top_k=6, settings=tmp_settings, folder="行业标准/可靠性")
+    assert exact and all(h.folder == "行业标准/可靠性" for h in exact)
 
-    other = search("MTBF 是什么", top_k=6, settings=tmp_settings, folder="设备手册")
+    other = search("MTBF 是什么", top_k=6, settings=tmp_settings, folder="设备手册/螺杆空压机")
     assert other and all(h.folder == "设备手册/螺杆空压机" for h in other)
 
 
@@ -90,8 +92,9 @@ def test_move_and_rename_folder(tmp_settings, tmp_path):
     manifest = Manifest(Manifest.path_for(tmp_settings))
     assert manifest.get(doc_id)["folder"] == "标准规范/行业"
 
-    hits = store.query(tmp_settings, "LUB 更换周期", top_k=5, folder="标准规范")
+    hits = store.query(tmp_settings, "LUB 更换周期", top_k=5, folder="标准规范/行业")
     assert hits and all(h["folder"] == "标准规范/行业" for h in hits)
+    assert store.query(tmp_settings, "LUB 更换周期", top_k=5, folder="标准规范") == []
 
 
 def test_delete_folder_move_mode(tmp_settings, tmp_path):

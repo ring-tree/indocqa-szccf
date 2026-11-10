@@ -42,29 +42,14 @@ function describeError(code: number | undefined, message: string): string {
 
 function ScopeCheckbox({
   checked,
-  indeterminate,
   label,
   onChange,
 }: {
   checked: boolean;
-  indeterminate: boolean;
   label: string;
   onChange: () => void;
 }) {
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (ref.current) ref.current.indeterminate = indeterminate;
-  }, [indeterminate]);
-  return (
-    <input
-      ref={ref}
-      type="checkbox"
-      checked={checked}
-      onChange={onChange}
-      aria-label={label}
-      aria-checked={indeterminate ? "mixed" : checked}
-    />
-  );
+  return <input type="checkbox" checked={checked} onChange={onChange} aria-label={label} />;
 }
 
 function ChatView({
@@ -119,43 +104,16 @@ function ChatView({
     return childrenMap.get(path) ?? [];
   }
 
-  function descendantsOf(path: string): KBFolder[] {
-    const result: KBFolder[] = [];
-    const walk = (parent: string) => {
-      for (const child of childrenOf(parent)) {
-        result.push(child);
-        walk(child.path);
-      }
-    };
-    walk(path);
-    return result;
-  }
-
   function isScopeChecked(path: string): boolean {
-    if (scopePaths.includes(path)) return true;
-    const children = childrenOf(path);
-    return children.length > 0 && children.every((child) => isScopeChecked(child.path));
-  }
-
-  function isScopeIndeterminate(path: string): boolean {
-    if (isScopeChecked(path)) return false;
-    return descendantsOf(path).some((child) => scopePaths.includes(child.path));
+    return scopePaths.includes(path);
   }
 
   function toggleScope(path: string) {
-    const checked = isScopeChecked(path);
-    const descendants = descendantsOf(path).map((item) => item.path);
-    const parts = path.split("/");
-    const ancestors = parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"));
-    setScopePaths((current) => {
-      const next = new Set(current);
-      if (checked) {
-        for (const item of [path, ...descendants, ...ancestors]) next.delete(item);
-      } else {
-        for (const item of [path, ...descendants]) next.add(item);
-      }
-      return [...next];
-    });
+    setScopePaths((current) =>
+      current.includes(path)
+        ? current.filter((item) => item !== path)
+        : [...current, path],
+    );
   }
 
   function renderScopeNodes(parent: string, depth: number): ReactNode[] {
@@ -167,7 +125,6 @@ function ChatView({
       >
         <ScopeCheckbox
           checked={isScopeChecked(item.path)}
-          indeterminate={isScopeIndeterminate(item.path)}
           onChange={() => toggleScope(item.path)}
           label={`选择目录 ${item.path}`}
         />
@@ -178,15 +135,12 @@ function ChatView({
     ]);
   }
 
-  const scopeRoots = scopePaths.filter(
-    (path) => !scopePaths.some((other) => other !== path && path.startsWith(other + "/")),
-  );
   const scopeLabel =
     scopePaths.length === 0
       ? "全部知识库"
-      : scopeRoots.length === 1
-        ? scopeRoots[0]
-        : `已选 ${scopeRoots.length} 个目录`;
+      : scopePaths.length === 1
+        ? scopePaths[0]
+        : `已选 ${scopePaths.length} 个目录`;
 
   useEffect(() => {
     fetchModels()
@@ -527,7 +481,6 @@ function ChatView({
                     )}
                     {renderScopeNodes("", 0)}
                   </div>
-                  <p className="ui-scope-hint">选中父目录会自动包含其全部子目录</p>
                 </div>
               )}
             </div>

@@ -1,4 +1,5 @@
 import { memo, useEffect, useState } from "react";
+import { ConfirmModal } from "./Dialogs";
 import type { Session } from "../lib/types";
 
 interface Props {
@@ -30,6 +31,7 @@ function Sidebar({
 }: Props) {
   const [managing, setManaging] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [pendingDelete, setPendingDelete] = useState<{ ids: string[]; label: string } | null>(null);
 
   useEffect(() => {
     setSelected((current) => {
@@ -57,10 +59,17 @@ function Sidebar({
   const deleteSelected = () => {
     const ids = [...selected];
     if (ids.length === 0) return;
-    if (!window.confirm(`删除选中的 ${ids.length} 个会话？该操作不可撤销。`)) return;
-    onDeleteMany(ids);
+    setPendingDelete({ ids, label: `删除选中的 ${ids.length} 个会话？` });
+  };
+
+  const confirmDelete = () => {
+    if (!pendingDelete) return;
+    const ids = pendingDelete.ids;
+    if (ids.length === 1) onDelete(ids[0]);
+    else onDeleteMany(ids);
     setSelected(new Set());
     setManaging(false);
+    setPendingDelete(null);
   };
 
   return (
@@ -204,7 +213,7 @@ function Sidebar({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (window.confirm(`删除会话「${s.title}」？`)) onDelete(s.id);
+                      setPendingDelete({ ids: [s.id], label: `删除会话「${s.title}」？` });
                     }}
                     className="ui-session-delete md:opacity-60 md:group-hover:opacity-100"
                     aria-label={`删除会话 ${s.title}`}
@@ -230,6 +239,17 @@ function Sidebar({
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={pendingDelete !== null}
+        title={pendingDelete?.label ?? ""}
+        confirmText="删除"
+        danger
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={confirmDelete}
+      >
+        该操作不可撤销。
+      </ConfirmModal>
     </aside>
   );
 }

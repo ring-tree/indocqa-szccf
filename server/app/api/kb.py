@@ -218,6 +218,15 @@ async def folders() -> dict:
     return {"data": [_folder_item(manifest, p) for p in manifest.folders()]}
 
 
+def _create_folder_sync(settings, path: str) -> dict:
+    with write_guard(settings):
+        manifest = _manifest(settings)
+        for item in ancestors(path):
+            manifest.ensure_folder(item)
+        manifest.save()
+        return _folder_item(manifest, path)
+
+
 @router.post("/folders")
 async def create_folder(body: FolderCreate) -> dict:
     settings = get_settings()
@@ -225,26 +234,11 @@ async def create_folder(body: FolderCreate) -> dict:
     if not path:
         raise ParamError("目录路径不能为空")
     path = validate_folder_create(settings, path)
-    with write_guard(settings):
-        manifest = _manifest(settings)
-        for item in ancestors(path):
-            manifest.ensure_folder(item)
-        manifest.save()
-        return {"data": _folder_item(manifest, path)}
+    item = await run_in_threadpool(_create_folder_sync, settings, path)
+    return {"data": item}
 
 
-@router.patch("/folders")
-async def rename_folder(body: FolderRename) -> dict:
-    settings = get_settings()
-    source = _folder_or_400(body.source, default=None)
-    target = _folder_or_400(body.target, default=None)
-    if not source or not target:
-        raise ParamError("目录路径不能为空")
-    if target == source:
-        return {"data": _folder_item(_manifest(settings), source)}
-    if is_within(target, source):
-        raise ParamError("不能把目录移动到自身的子目录下")
-    target = validate_folder_create(settings, target)
+def _rename_folder_sync(settings, source: str, target: str) -> dict:
     with write_guard(settings):
         manifest = _manifest(settings)
         folders = manifest.folders()
@@ -285,19 +279,26 @@ async def rename_folder(body: FolderRename) -> dict:
         for item in ancestors(target):
             manifest.ensure_folder(item)
         manifest.save()
-        return {"data": _folder_item(manifest, target)}
+        return _folder_item(manifest, target)
 
 
-@router.delete("/folders")
-async def delete_folder(path: str, mode: str = "move") -> dict:
+@router.patch("/folders")
+async def rename_folder(body: FolderRename) -> dict:
     settings = get_settings()
-    folder = _folder_or_400(path, default=None)
-    if not folder:
+    source = _folder_or_400(body.source, default=None)
+    target = _folder_or_400(body.target, default=None)
+    if not source or not target:
         raise ParamError("目录路径不能为空")
-    if folder == DEFAULT_FOLDER:
-        raise ParamError(f"默认目录“{DEFAULT_FOLDER}”不能删除，可重命名")
-    if mode not in {"move", "delete"}:
-        raise ParamError("mode 仅支持 move 或 delete")
+    if target == source:
+        return {"data": _folder_item(_manifest(settings), source)}
+    if is_within(target, source):
+        raise ParamError("不能把目录移动到自身的子目录下")
+    target = validate_folder_create(settings, target)
+    item = await run_in_threadpool(_rename_folder_sync, settings, source, target)
+    return {"data": item}
+
+
+def _delete_folder_sync(settings, folder: str, mode: str) -> dict:
     with write_guard(settings):
         manifest = _manifest(settings)
         docs = manifest.docs_in_folder(folder)
@@ -332,7 +333,21 @@ async def delete_folder(path: str, mode: str = "move") -> dict:
             if is_within(item, folder):
                 manifest.remove_folder(item)
         manifest.save()
-        return {"data": {"affected": moved_or_deleted, "mode": mode}}
+        return {"affected": moved_or_deleted, "mode": mode}
+
+
+@router.delete("/folders")
+async def delete_folder(path: str, mode: str = "move") -> dict:
+    settings = get_settings()
+    folder = _folder_or_400(path, default=None)
+    if not folder:
+        raise ParamError("目录路径不能为空")
+    if folder == DEFAULT_FOLDER:
+        raise ParamError(f"默认目录“{DEFAULT_FOLDER}”不能删除，可重命名")
+    if mode not in {"move", "delete"}:
+        raise ParamError("mode 仅支持 move 或 delete")
+    result = await run_in_threadpool(_delete_folder_sync, settings, folder, mode)
+    return {"data": result}
 
 
 @router.post("/documents/batch-move")
@@ -420,9 +435,7 @@ async def documents(folder: str | None = None) -> dict:
     return {"data": docs}
 
 
-@router.delete("/documents/{doc_id}")
-async def delete_document(doc_id: str) -> dict:
-    settings = get_settings()
+def _delete_document_sync(settings, doc_id: str) -> None:
     manifest = _manifest(settings)
     info = manifest.get(doc_id)
     if not info:
@@ -433,4 +446,10 @@ async def delete_document(doc_id: str) -> dict:
     stored = info.get("stored_name")
     if stored:
         (pathlib.Path(settings.upload_dir) / stored).unlink(missing_ok=True)
+
+
+@router.delete("/documents/{doc_id}")
+async def delete_document(doc_id: str) -> dict:
+    settings = get_settings()
+    await run_in_threadpool(_delete_document_sync, settings, doc_id)
     return {"data": True}

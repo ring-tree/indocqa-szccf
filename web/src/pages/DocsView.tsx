@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
+import { ConfirmModal, PromptModal } from "../components/Dialogs";
 import ModelPicker from "../components/ModelPicker";
 import {
   batchMoveDocuments,
@@ -45,6 +46,12 @@ interface ConfirmMove {
   source: string;
   target: string;
   suggested?: string;
+}
+
+interface FolderForm {
+  mode: "create" | "rename";
+  value: string;
+  source?: string;
 }
 
 interface BatchPlanItem {
@@ -478,11 +485,18 @@ function DocsView({ className = "", onChanged }: Props) {
   } | null>(null);
   const [ingesting, setIngesting] = useState(false);
   const [batchAi, setBatchAi] = useState<BatchAiState | null>(null);
-  const [drag, setDrag] = useState<{ ids: string[]; source: string } | null>(null);
+  const [drag, setDrag] = useState<{ ids: string[]; sources: string[] } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ path: string; valid: boolean } | null>(null);
   const [confirmMove, setConfirmMove] = useState<ConfirmMove | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [confirmError, setConfirmError] = useState("");
+  const [folderForm, setFolderForm] = useState<FolderForm | null>(null);
+  const [folderFormBusy, setFolderFormBusy] = useState(false);
+  const [folderFormError, setFolderFormError] = useState("");
+  const [deleteFolderPath, setDeleteFolderPath] = useState<string | null>(null);
+  const [deleteDoc, setDeleteDoc] = useState<{ docId: string; filename: string } | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
   const [undo, setUndo] = useState<{ opId: string; count: number; target: string } | null>(null);
   const [picker, setPicker] = useState<{
     title: string;
@@ -672,13 +686,24 @@ function DocsView({ className = "", onChanged }: Props) {
     await refresh();
   }
 
-  async function onDelete(docId: string, filename: string) {
-    if (!window.confirm(`删除文档 ${filename} 及其索引？`)) return;
+  function openDeleteDoc(docId: string, filename: string) {
+    setActionError("");
+    setDeleteDoc({ docId, filename });
+  }
+
+  async function confirmDeleteDoc() {
+    if (!deleteDoc || actionBusy) return;
+    setActionBusy(true);
+    setActionError("");
     try {
-      await deleteDocument(docId);
+      await deleteDocument(deleteDoc.docId);
+      setDeleteDoc(null);
+      setMessage(`已删除文档 ${deleteDoc.filename}`);
       await refresh();
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "删除失败");
+      setActionError(e instanceof Error ? e.message : "删除失败");
+    } finally {
+      setActionBusy(false);
     }
   }
 
@@ -695,36 +720,73 @@ function DocsView({ className = "", onChanged }: Props) {
     }
   }
 
-  async function onRenameFolder() {
+  function openCreateFolder() {
+    setFolderFormError("");
+    const base = activeFolder && hasChildren(activeFolder) ? activeFolder : "";
+    setFolderForm({
+      mode: "create",
+      value: base ? `${base}/新目录` : "",
+    });
+  }
+
+  function openRenameFolder() {
     if (!activeFolder) return;
-    const target = window.prompt("新的目录路径", activeFolder)?.trim();
-    if (!target || target === activeFolder) return;
+    setFolderFormError("");
+    setFolderForm({ mode: "rename", value: activeFolder, source: activeFolder });
+  }
+
+  async function submitFolderForm(path: string) {
+    if (!folderForm || folderFormBusy) return;
+    setFolderFormBusy(true);
+    setFolderFormError("");
     try {
-      await renameFolder(activeFolder, target);
-      await refresh();
-      setActiveFolder(target);
-      setMessage(`已重命名为 ${target}`);
+      if (folderForm.mode === "create") {
+        await onCreateFolder(path);
+      } else if (folderForm.source) {
+        await renameFolder(folderForm.source, path);
+        await refresh();
+        setActiveFolder(path);
+        setMessage(`已重命名为 ${path}`);
+      }
+      setFolderForm(null);
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "重命名失败");
+      setFolderFormError(e instanceof Error ? e.message : "操作失败");
+    } finally {
+      setFolderFormBusy(false);
     }
   }
 
-  async function onDeleteFolder() {
+  function openDeleteFolder() {
     if (!activeFolder) return;
-    if (!window.confirm(`删除目录「${activeFolder}」？其中文档将移动到上级目录。`)) return;
+    setActionError("");
+    setDeleteFolderPath(activeFolder);
+  }
+
+  async function confirmDeleteFolder() {
+    if (!deleteFolderPath || actionBusy) return;
+    setActionBusy(true);
+    setActionError("");
     try {
-      await deleteFolder(activeFolder, "move");
+      await deleteFolder(deleteFolderPath, "move");
+      setDeleteFolderPath(null);
       await refresh();
       setActiveFolder("");
       setMessage("目录已删除，文档已移动到上级目录");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "删除失败");
+      setActionError(e instanceof Error ? e.message : "删除失败");
+    } finally {
+      setActionBusy(false);
     }
   }
 
   function startDrag(event: DragEvent, doc: KBDocument) {
     const ids = selected.has(doc.docId) ? [...selected] : [doc.docId];
-    setDrag({ ids, source: doc.folder || DEFAULT_FOLDER });
+    const sources = [
+      ...new Set(
+        ids.map((id) => docs.find((item) => item.docId === id)?.folder || DEFAULT_FOLDER),
+      ),
+    ];
+    setDrag({ ids, sources });
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", ids.join(","));
     const ghost = document.createElement("div");
@@ -744,11 +806,17 @@ function DocsView({ className = "", onChanged }: Props) {
     }
   }
 
+  function canDropTo(path: string) {
+    return Boolean(
+      drag && isLeafFolder(path) && drag.sources.some((source) => source !== path),
+    );
+  }
+
   function onFolderDragOver(event: DragEvent, path: string) {
     if (!drag) return;
     event.preventDefault();
     event.stopPropagation();
-    const valid = drag.source !== path && isLeafFolder(path);
+    const valid = canDropTo(path);
     setDropTarget({ path, valid });
     if (valid && collapsed.has(path) && hasChildren(path) && expandTimer.current === null) {
       expandTimer.current = window.setTimeout(() => {
@@ -766,8 +834,12 @@ function DocsView({ className = "", onChanged }: Props) {
     if (!drag) return;
     event.preventDefault();
     event.stopPropagation();
-    if (drag.source !== path && isLeafFolder(path)) {
-      setConfirmMove({ ids: drag.ids, source: drag.source, target: path });
+    if (canDropTo(path)) {
+      setConfirmMove({
+        ids: drag.ids,
+        source: drag.sources.length === 1 ? drag.sources[0] : "多个目录",
+        target: path,
+      });
       setConfirmError("");
     }
     endDrag();
@@ -806,11 +878,15 @@ function DocsView({ className = "", onChanged }: Props) {
       }
       const skipped = result.skippedDetails?.length ?? result.skipped.length;
       const failed = result.failed.length;
-      setMessage(
-        `成功移动 ${result.moved.length} 份${
-          skipped ? `，跳过 ${skipped} 份（已在目标目录）` : ""
-        }${failed ? `，失败 ${failed} 份` : ""}`,
-      );
+      if (result.moved.length === 0 && skipped > 0 && failed === 0) {
+        setMessage(`所选文档均已在「${confirmMove.target}」，无需移动`);
+      } else {
+        setMessage(
+          `成功移动 ${result.moved.length} 份${
+            skipped ? `，跳过 ${skipped} 份（已在目标目录）` : ""
+          }${failed ? `，失败 ${failed} 份` : ""}`,
+        );
+      }
       if (feedback) {
         // 反馈失败不影响已完成的移动
         void sendClassifyFeedback(feedback).catch(() => undefined);
@@ -1237,11 +1313,7 @@ function DocsView({ className = "", onChanged }: Props) {
               </span>
               <button
                 type="button"
-                onClick={() => {
-                  const suggestion = activeFolder ? `${activeFolder}/新目录` : "新目录";
-                  const path = window.prompt("新目录路径（用 / 分隔多级）", suggestion)?.trim();
-                  if (path) void onCreateFolder(path);
-                }}
+                onClick={openCreateFolder}
                 className="ui-btn ui-btn-sm ui-btn-ghost"
               >
                 + 新建
@@ -1322,10 +1394,10 @@ function DocsView({ className = "", onChanged }: Props) {
             </ul>
             {activeFolder && (
               <div className="mt-3 flex gap-2 border-t border-[var(--line)] pt-3">
-                <button type="button" onClick={() => void onRenameFolder()} className="ui-btn ui-btn-sm ui-btn-ghost">
+                <button type="button" onClick={openRenameFolder} className="ui-btn ui-btn-sm ui-btn-ghost">
                   重命名
                 </button>
-                <button type="button" onClick={() => void onDeleteFolder()} className="ui-btn ui-btn-sm ui-btn-danger">
+                <button type="button" onClick={openDeleteFolder} className="ui-btn ui-btn-sm ui-btn-danger">
                   删除
                 </button>
               </div>
@@ -1646,7 +1718,7 @@ function DocsView({ className = "", onChanged }: Props) {
                           </button>
                           <button
                             type="button"
-                            onClick={() => void onDelete(d.docId, d.filename)}
+                            onClick={() => openDeleteDoc(d.docId, d.filename)}
                             aria-label={`删除文档 ${d.filename}`}
                             className="ui-btn ui-btn-sm ui-btn-danger"
                           >
@@ -1686,6 +1758,60 @@ function DocsView({ className = "", onChanged }: Props) {
           onConfirm={() => void submitMove()}
         />
       )}
+
+      <PromptModal
+        open={folderForm !== null}
+        title={folderForm?.mode === "rename" ? "重命名目录" : "新建目录"}
+        description={
+          folderForm?.mode === "rename"
+            ? "目录内文档会同步迁移到新路径。"
+            : "用 / 分隔多级目录；已有文档的目录不能再创建子目录。"
+        }
+        initialValue={folderForm?.value ?? ""}
+        confirmText={folderForm?.mode === "rename" ? "保存" : "创建"}
+        busy={folderFormBusy}
+        error={folderFormError}
+        onCancel={() => {
+          if (folderFormBusy) return;
+          setFolderForm(null);
+          setFolderFormError("");
+        }}
+        onSubmit={(value) => void submitFolderForm(value)}
+      />
+
+      <ConfirmModal
+        open={deleteFolderPath !== null}
+        title={`删除目录「${deleteFolderPath ?? ""}」？`}
+        confirmText="确认删除"
+        danger
+        busy={actionBusy}
+        error={actionError}
+        onCancel={() => {
+          if (actionBusy) return;
+          setDeleteFolderPath(null);
+          setActionError("");
+        }}
+        onConfirm={() => void confirmDeleteFolder()}
+      >
+        目录中的文档将移动到上级目录；若上级仍包含其他子目录，操作会被拒绝。
+      </ConfirmModal>
+
+      <ConfirmModal
+        open={deleteDoc !== null}
+        title={`删除文档「${deleteDoc?.filename ?? ""}」？`}
+        confirmText="删除"
+        danger
+        busy={actionBusy}
+        error={actionError}
+        onCancel={() => {
+          if (actionBusy) return;
+          setDeleteDoc(null);
+          setActionError("");
+        }}
+        onConfirm={() => void confirmDeleteDoc()}
+      >
+        文档及其全部索引会被删除，操作不可撤销。
+      </ConfirmModal>
 
       {ai && (
         <AiPanel

@@ -70,7 +70,7 @@ def search(
     - strategy：hybrid 两路融合；keyword 仅 BM25（故障码等精确匹配）；vector 仅向量；
       none 直接返回空（寒暄等无需检索）。
     - min_sim 仅作用于向量命中那一路。
-    - folder/folders：目录子树过滤（含自身），空表示全库。
+    - folder/folders：按所选目录精确过滤（不自动包含子目录），空表示全库。
     """
     if strategy == "none":
         return []
