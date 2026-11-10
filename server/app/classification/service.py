@@ -219,10 +219,11 @@ async def classify_text(
     *,
     use_llm: bool = True,
     exclude_doc_id: str | None = None,
+    profile: str | None = None,
 ) -> dict:
     """对一段文本（预览）做分类；未配置模型时抛出 40904。"""
     settings = settings or get_settings()
-    gateway = LLMGateway(settings)
+    gateway = LLMGateway(settings, profile)
     if not gateway.configured:
         raise AIUnavailableError("无可用模型")
     started = time.perf_counter()
@@ -263,16 +264,16 @@ async def classify_text(
     }
 
 
-async def classify_document(settings, doc_id: str) -> dict:
+async def classify_document(settings, doc_id: str, profile: str | None = None) -> dict:
     settings = settings or get_settings()
     manifest = Manifest(Manifest.path_for(settings))
     info = manifest.get(doc_id)
     if not info:
         raise DocumentNotFoundError(f"文档不存在: {doc_id}")
-    profile = store.doc_profile(settings, doc_id)
-    text = "\n".join(profile.get("texts") or [])
+    profile_data = store.doc_profile(settings, doc_id)
+    text = "\n".join(profile_data.get("texts") or [])
     filename = info.get("filename", "")
-    gateway = LLMGateway(settings)
+    gateway = LLMGateway(settings, profile)
     if not gateway.configured:
         raise AIUnavailableError("无可用模型")
     started = time.perf_counter()
@@ -285,7 +286,7 @@ async def classify_document(settings, doc_id: str) -> dict:
             "reason": "no_folders",
             "latencyMs": int((time.perf_counter() - started) * 1000),
         }
-    vector = profile.get("vector")
+    vector = profile_data.get("vector")
     if not vector:
         try:
             vector = store.query_embedding(settings, f"{filename}\n{text[:MAX_SUMMARY]}")

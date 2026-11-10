@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Message from "../components/Message";
 import ModelPicker from "../components/ModelPicker";
 import {
@@ -20,7 +20,7 @@ interface Props {
   active?: boolean;
 }
 
-const SCOPE_KEY = "indocqa-scope";
+const SCOPE_KEY = "indocqa-scope-paths";
 
 const ERROR_HINT: Record<number, string> = {
   40001: "请求参数不合法，请检查问题或检索范围",
@@ -40,6 +40,33 @@ function describeError(code: number | undefined, message: string): string {
   return hint ? `${hint}（${message}）` : message;
 }
 
+function ScopeCheckbox({
+  checked,
+  indeterminate,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  indeterminate: boolean;
+  label: string;
+  onChange: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      aria-label={label}
+      aria-checked={indeterminate ? "mixed" : checked}
+    />
+  );
+}
+
 function ChatView({
   activeId,
   onActiveId,
@@ -57,7 +84,16 @@ function ChatView({
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [profile, setProfile] = useState("");
   const [folders, setFolders] = useState<KBFolder[]>([]);
-  const [folder, setFolder] = useState(() => localStorage.getItem(SCOPE_KEY) ?? "");
+  const [scopePaths, setScopePaths] = useState<string[]>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SCOPE_KEY) ?? "[]");
+      return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+    } catch {
+      return [];
+    }
+  });
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const scopeRef = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -67,6 +103,90 @@ function ChatView({
   const bufferRef = useRef("");
   const flushTimerRef = useRef<number | null>(null);
   const hasModels = models.length > 0;
+
+  const childrenMap = useMemo(() => {
+    const map = new Map<string, KBFolder[]>();
+    for (const item of folders) {
+      const list = map.get(item.parent) ?? [];
+      list.push(item);
+      map.set(item.parent, list);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+    return map;
+  }, [folders]);
+
+  function childrenOf(path: string): KBFolder[] {
+    return childrenMap.get(path) ?? [];
+  }
+
+  function descendantsOf(path: string): KBFolder[] {
+    const result: KBFolder[] = [];
+    const walk = (parent: string) => {
+      for (const child of childrenOf(parent)) {
+        result.push(child);
+        walk(child.path);
+      }
+    };
+    walk(path);
+    return result;
+  }
+
+  function isScopeChecked(path: string): boolean {
+    if (scopePaths.includes(path)) return true;
+    const children = childrenOf(path);
+    return children.length > 0 && children.every((child) => isScopeChecked(child.path));
+  }
+
+  function isScopeIndeterminate(path: string): boolean {
+    if (isScopeChecked(path)) return false;
+    return descendantsOf(path).some((child) => scopePaths.includes(child.path));
+  }
+
+  function toggleScope(path: string) {
+    const checked = isScopeChecked(path);
+    const descendants = descendantsOf(path).map((item) => item.path);
+    const parts = path.split("/");
+    const ancestors = parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/"));
+    setScopePaths((current) => {
+      const next = new Set(current);
+      if (checked) {
+        for (const item of [path, ...descendants, ...ancestors]) next.delete(item);
+      } else {
+        for (const item of [path, ...descendants]) next.add(item);
+      }
+      return [...next];
+    });
+  }
+
+  function renderScopeNodes(parent: string, depth: number): ReactNode[] {
+    return childrenOf(parent).flatMap((item) => [
+      <label
+        key={item.path}
+        className="ui-scope-node"
+        style={{ paddingLeft: 8 + depth * 14 }}
+      >
+        <ScopeCheckbox
+          checked={isScopeChecked(item.path)}
+          indeterminate={isScopeIndeterminate(item.path)}
+          onChange={() => toggleScope(item.path)}
+          label={`选择目录 ${item.path}`}
+        />
+        <span className="ui-scope-node-name">{item.name}</span>
+        <span className="ui-scope-node-count">{item.documentCount}</span>
+      </label>,
+      ...renderScopeNodes(item.path, depth + 1),
+    ]);
+  }
+
+  const scopeRoots = scopePaths.filter(
+    (path) => !scopePaths.some((other) => other !== path && path.startsWith(other + "/")),
+  );
+  const scopeLabel =
+    scopePaths.length === 0
+      ? "全部知识库"
+      : scopeRoots.length === 1
+        ? scopeRoots[0]
+        : `已选 ${scopeRoots.length} 个目录`;
 
   useEffect(() => {
     fetchModels()
@@ -79,14 +199,14 @@ function ChatView({
     fetchFolders()
       .then((list) => {
         setFolders(list);
-        setFolder((current) => (list.some((f) => f.path === current) ? current : ""));
+        setScopePaths((current) => current.filter((p) => list.some((f) => f.path === p)));
       })
       .catch(() => setFolders([]));
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(SCOPE_KEY, folder);
-  }, [folder]);
+    localStorage.setItem(SCOPE_KEY, JSON.stringify(scopePaths));
+  }, [scopePaths]);
 
   // 文档页增删目录后回到问答页时刷新范围列表
   useEffect(() => {
@@ -94,10 +214,26 @@ function ChatView({
     fetchFolders()
       .then((list) => {
         setFolders(list);
-        setFolder((current) => (list.some((f) => f.path === current) ? current : ""));
+        setScopePaths((current) => current.filter((p) => list.some((f) => f.path === p)));
       })
       .catch(() => setFolders([]));
   }, [active]);
+
+  useEffect(() => {
+    if (!scopeOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!scopeRef.current?.contains(event.target as Node)) setScopeOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setScopeOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [scopeOpen]);
 
   useEffect(() => {
     if (activeId === currentRef.current) return;
@@ -265,7 +401,8 @@ function ChatView({
         },
         controller.signal,
         profile,
-        folder || null,
+        null,
+        scopePaths.length > 0 ? scopePaths : null,
       );
     } catch (e) {
       if (!alive()) return;
@@ -354,23 +491,46 @@ function ChatView({
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {mode === "kb" && (
-            <label className="ui-scope">
-              <span className="ui-scope-label">检索范围</span>
-              <select
-                value={folder}
-                onChange={(e) => setFolder(e.target.value)}
-                disabled={busy}
-                aria-label="选择知识库检索范围"
-                className="ui-scope-select"
+            <div className="ui-scope" ref={scopeRef}>
+              <button
+                type="button"
+                className="ui-scope-trigger"
+                aria-haspopup="dialog"
+                aria-expanded={scopeOpen}
+                aria-controls="scope-popover"
+                onClick={() => setScopeOpen((open) => !open)}
               >
-                <option value="">全部知识库</option>
-                {folders.map((item) => (
-                  <option key={item.path} value={item.path}>
-                    {item.path}（{item.documentCount}）
-                  </option>
-                ))}
-              </select>
-            </label>
+                <span className="ui-scope-label">检索范围</span>
+                <span className="ui-scope-value">{scopeLabel}</span>
+                <span className="ui-scope-chevron" aria-hidden="true">▾</span>
+              </button>
+              {scopeOpen && (
+                <div
+                  id="scope-popover"
+                  className="ui-scope-popover"
+                  role="dialog"
+                  aria-label="选择检索目录"
+                >
+                  <div className="ui-scope-popover-head">
+                    <span>选择检索范围</span>
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-sm ui-btn-ghost"
+                      onClick={() => setScopePaths([])}
+                    >
+                      全部知识库
+                    </button>
+                  </div>
+                  <div className="ui-scope-tree">
+                    {folders.length === 0 && (
+                      <p className="ui-scope-empty">还没有目录，上传文档后可选择范围</p>
+                    )}
+                    {renderScopeNodes("", 0)}
+                  </div>
+                  <p className="ui-scope-hint">选中父目录会自动包含其全部子目录</p>
+                </div>
+              )}
+            </div>
           )}
           <span className="hidden text-xs font-medium text-[var(--muted)] sm:block">
             {mode === "kb" ? "回答仅依据已入库文档，逐句附引用" : "不经过知识库检索"}

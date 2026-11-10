@@ -2,6 +2,7 @@
 
 import pathlib
 import re
+import threading
 from uuid import uuid4
 
 from fastapi import APIRouter, Form, UploadFile
@@ -27,6 +28,7 @@ from app.indexing.folders import (
     parent_of,
 )
 from app.indexing.ingest import ALLOWED_EXTS, ingest_file
+from app.indexing.jobs import create_job, get_job, run_ingest_job
 from app.indexing.lock import write_guard
 from app.indexing.manifest import Manifest
 from app.indexing.moves import batch_move, undo_move
@@ -63,6 +65,7 @@ class ClassifyRequest(BaseModel):
     doc_id: str | None = Field(default=None, max_length=64, alias="docId")
     filename: str | None = Field(default=None, max_length=300)
     text: str | None = Field(default=None, max_length=4000)
+    profile: str | None = Field(default=None, max_length=32)
 
     model_config = {"populate_by_name": True}
 
@@ -128,13 +131,55 @@ async def ingest(
     path = target_dir / stored_name
     path.write_bytes(data)
     try:
-        result = await run_in_threadpool(ingest_file, path, None, stored_name, target_folder)
+        result = await run_in_threadpool(
+            ingest_file, path, None, stored_name, target_folder, None, filename
+        )
     except Exception:
         path.unlink(missing_ok=True)  # 入库失败不留孤儿上传文件
         raise
     if result.get("duplicated") or result.get("chunks", 0) == 0:
         path.unlink(missing_ok=True)
     return {"data": result}
+
+
+@router.post("/ingest/jobs")
+async def start_ingest_job(
+    file: UploadFile,
+    folder: str = Form(DEFAULT_FOLDER),
+) -> dict:
+    """启动带进度的后台入库任务；前端轮询 GET /api/kb/ingest/jobs/{jobId}。"""
+    settings = get_settings()
+    target_folder = _folder_or_400(folder)
+    filename = pathlib.Path(file.filename or "unnamed").name
+    suffix = pathlib.Path(filename).suffix.lower()
+    if suffix not in ALLOWED_EXTS:
+        raise UnsupportedFormatError(
+            f"仅支持 {'/'.join(sorted(ALLOWED_EXTS))}，收到 {suffix or '无扩展名'}"
+        )
+    data = await file.read()
+    if len(data) > MAX_BYTES:
+        raise FileTooLargeError("文件超过 20MB 上限")
+    safe = _SAFE_NAME.sub("_", filename)
+    stored_name = f"{uuid4().hex[:8]}_{safe}"
+    target_dir = pathlib.Path(settings.upload_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    path = target_dir / stored_name
+    path.write_bytes(data)
+    job_id = create_job(total_docs=1)
+    threading.Thread(
+        target=run_ingest_job,
+        args=(job_id, path, settings, stored_name, target_folder, filename),
+        daemon=True,
+    ).start()
+    return {"data": {"jobId": job_id, "totalDocs": 1, "folder": target_folder}}
+
+
+@router.get("/ingest/jobs/{job_id}")
+async def ingest_job_status(job_id: str) -> dict:
+    job = get_job(job_id)
+    if not job:
+        raise DocumentNotFoundError(f"入库任务不存在或已过期: {job_id}")
+    return {"data": job}
 
 
 @router.post("/preview")
@@ -303,10 +348,10 @@ async def classify_document_route(body: ClassifyRequest) -> dict:
     if not classify_service.is_available(settings):
         raise AIUnavailableError("无可用模型")
     if body.doc_id:
-        result = await classify_service.classify_document(settings, body.doc_id)
+        result = await classify_service.classify_document(settings, body.doc_id, body.profile)
     elif body.filename and body.text:
         result = await classify_service.classify_text(
-            settings, body.filename, body.text, use_llm=True
+            settings, body.filename, body.text, use_llm=True, profile=body.profile
         )
     else:
         raise ParamError("需要提供 docId，或 filename + text")

@@ -20,6 +20,7 @@ class GState(TypedDict, total=False):
     question: str
     mode: str
     folder: str | None
+    folders: list | None
     top_k_override: int | None
     intent: str
     entities: list
@@ -95,6 +96,7 @@ def retrieve_node(state: GState) -> dict:
         query_lex=query_lex if query_lex != query_sem else None,
         strategy=plan.get("strategy", "hybrid"),
         folder=state.get("folder"),
+        folders=state.get("folders"),
     )
     if plan.get("boost_table"):
         # 分数加权而非“表格优先”：避免低相关表格仅凭类型挤掉高相关正文
@@ -120,6 +122,7 @@ def retrieve_node(state: GState) -> dict:
                 "query": query_lex,
                 "expansions": state.get("expansions", []),
                 "folder": state.get("folder") or "",
+                "folders": state.get("folders") or [],
                 "hits": len(hits),
             }
         ],
@@ -217,6 +220,7 @@ async def run_retrieval(
     settings=None,
     top_k: int | None = None,
     folder: str | None = None,
+    folders: list[str] | None = None,
 ) -> dict:
     """执行状态图，返回最终状态（plan / intent / hits / trace）。"""
     final = await get_compiled_graph().ainvoke(
@@ -224,6 +228,7 @@ async def run_retrieval(
             "question": question,
             "mode": mode,
             "folder": folder,
+            "folders": folders,
             "top_k_override": top_k,
         }
     )

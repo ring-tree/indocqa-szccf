@@ -105,12 +105,21 @@ def add_children(
     parents: list[ParentChunk],
     doc_name: str,
     folder: str = DEFAULT_FOLDER,
+    progress=None,
 ) -> None:
     from app.indexing.bm25_index import get_bm25
 
     with write_guard(settings):
         embedder = get_embedder(settings)
-        embeddings = embedder.embed([c.text for c in children])
+        texts = [c.text for c in children]
+        embeddings: list[list[float]] = []
+        batch_size = 32
+        total = len(texts)
+        for start in range(0, total, batch_size):
+            batch = texts[start : start + batch_size]
+            embeddings.extend(embedder.embed(batch))
+            if progress:
+                progress("embedding", min(start + batch_size, total), total)
         metadatas = []
         for c in children:
             meta: dict = {
@@ -143,29 +152,26 @@ def add_children(
         get_bm25(settings).update({c.chunk_id: f"{c.section}\n{c.text}" for c in children})
 
 
-def _where_for_folder(folder: str | None, folders: list[str]) -> dict | None:
-    from app.indexing.folders import normalize_folder
-
-    path = normalize_folder(folder, default=None)
-    if not path:
-        return None
-    paths = [p for p in folders if p == path or p.startswith(path + "/")]
-    if not paths:
-        paths = [path]
-    if len(paths) == 1:
-        return {"folder": paths[0]}
-    return {"folder": {"$in": paths}}
-
-
-def query(settings, query_text: str, top_k: int, folder: str | None = None) -> list[dict]:
+def query(
+    settings,
+    query_text: str,
+    top_k: int,
+    folder: str | None = None,
+    folders: list[str] | None = None,
+) -> list[dict]:
     """返回 [{"sim", "text", "doc_id", ...}]；相似度 = 1 - 余弦距离。
 
-    folder 非空时只召回该目录子树（含自身）的块。
+    folder/folders 非空时只召回这些目录子树（含自身）的块。
     """
+    from app.indexing.folders import scope_paths
+
     emb = query_embedding(settings, query_text)
+    paths = scope_paths(settings, folder, folders)
     where = None
-    if folder:
-        where = _where_for_folder(folder, _manifest_folders(settings))
+    if len(paths) == 1:
+        where = {"folder": paths[0]}
+    elif paths:
+        where = {"folder": {"$in": paths}}
     res = _collection(settings).query(
         query_embeddings=[emb],
         n_results=top_k,
@@ -192,12 +198,6 @@ def query(settings, query_text: str, top_k: int, folder: str | None = None) -> l
             }
         )
     return hits
-
-
-def _manifest_folders(settings) -> list[str]:
-    from app.indexing.manifest import Manifest
-
-    return Manifest(Manifest.path_for(settings)).folders()
 
 
 def get_parent_text(settings, doc_id: str, section: str) -> str:
@@ -305,6 +305,23 @@ def update_doc_folder(settings, doc_id: str, folder: str) -> int:
         for meta in res.get("metadatas") or []:
             item = dict(meta or {})
             item["folder"] = folder
+            metadatas.append(item)
+        collection.update(ids=ids, metadatas=metadatas)
+        return len(ids)
+
+
+def update_doc_name(settings, doc_id: str, name: str) -> int:
+    """修正展示名（去掉上传临时前缀），只改元数据。"""
+    with write_guard(settings):
+        collection = _collection(settings)
+        res = collection.get(where={"doc_id": doc_id}, include=["metadatas"])
+        ids = res.get("ids") or []
+        if not ids:
+            return 0
+        metadatas = []
+        for meta in res.get("metadatas") or []:
+            item = dict(meta or {})
+            item["doc_name"] = name
             metadatas.append(item)
         collection.update(ids=ids, metadatas=metadatas)
         return len(ids)

@@ -96,16 +96,18 @@ def _context_query(message: str, history: list[dict]) -> str:
     return message
 
 
-def _scope(settings, folder: str | None = None) -> list[str]:
+def _scope(settings, folder: str | None = None, folders: list[str] | None = None) -> list[str]:
     """已入库文档名，用于库外回答说明“检索过什么”；可按目录收敛。"""
     try:
         docs = Manifest(Manifest.path_for(settings)).documents()
     except (OSError, ValueError, KeyError):
         return []
+    scopes = [f for f in ([folder] if folder else []) + list(folders or []) if f]
     names = []
     for info in docs.values():
-        if folder and not (
-            info.get("folder") == folder or (info.get("folder") or "").startswith(folder + "/")
+        doc_folder = info.get("folder") or ""
+        if scopes and not any(
+            doc_folder == scope or doc_folder.startswith(scope + "/") for scope in scopes
         ):
             continue
         if info.get("filename"):
@@ -136,6 +138,7 @@ async def chat_stream(
     session_id: str | None = None,
     profile: str | None = None,
     folder: str | None = None,
+    folders: list[str] | None = None,
 ) -> AsyncIterator[dict]:
     settings = settings or get_settings()
     gateway = LLMGateway(settings, profile)
@@ -170,14 +173,19 @@ async def chat_stream(
         return
 
     retrieval = await run_retrieval(
-        retrieval_query, settings.retrieval_mode, settings, top_k, folder=folder
+        retrieval_query,
+        settings.retrieval_mode,
+        settings,
+        top_k,
+        folder=folder,
+        folders=folders,
     )
     for step in retrieval["trace"]:
         yield {"event": "trace", "data": step}
 
     plan = retrieval["plan"]
     hits = retrieval["hits"]
-    scope = _scope(settings, folder)
+    scope = _scope(settings, folder, folders)
 
     if plan.get("skip_retrieval"):
         parts = []

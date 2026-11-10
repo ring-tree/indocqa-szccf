@@ -3,6 +3,8 @@ import type {
   ChatMode,
   ClassificationResult,
   DonePayload,
+  HealthInfo,
+  IngestJob,
   KBDocument,
   KBFolder,
   ModelProfile,
@@ -27,6 +29,7 @@ export async function sendChat(
   signal?: AbortSignal,
   profile?: string | null,
   folder?: string | null,
+  folders?: string[] | null,
 ): Promise<void> {
   await postSSE(
     "/api/chat",
@@ -36,6 +39,7 @@ export async function sendChat(
       ...(sessionId ? { sessionId } : {}),
       ...(profile ? { profile } : {}),
       ...(folder ? { folder } : {}),
+      ...(folders && folders.length > 0 ? { folders } : {}),
     },
     (ev) => {
       const data = ev.data as Record<string, unknown>;
@@ -68,6 +72,10 @@ async function jsonOrThrow<T>(resp: Response): Promise<T> {
     throw new Error(message);
   }
   return (await resp.json()) as T;
+}
+
+export async function fetchHealth(): Promise<HealthInfo> {
+  return jsonOrThrow<HealthInfo>(await fetch("/api/health"));
 }
 
 export async function fetchDocuments(folder?: string | null): Promise<KBDocument[]> {
@@ -157,12 +165,15 @@ export async function previewDocument(
   return body.data;
 }
 
-export async function classifyDocument(docId: string): Promise<ClassificationResult> {
+export async function classifyDocument(
+  docId: string,
+  profile?: string | null,
+): Promise<ClassificationResult> {
   const body = await jsonOrThrow<{ data: ClassificationResult }>(
     await fetch("/api/kb/classify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ docId }),
+      body: JSON.stringify({ docId, ...(profile ? { profile } : {}) }),
     }),
   );
   return body.data;
@@ -187,9 +198,21 @@ export async function sendClassifyFeedback(payload: {
 export async function batchMoveDocuments(
   docIds: string[],
   folder: string,
-): Promise<{ operationId: string | null; moved: string[]; skipped: string[]; failed: unknown[] }> {
+): Promise<{
+  operationId: string | null;
+  moved: string[];
+  skipped: string[];
+  skippedDetails: { docId: string; reason: string }[];
+  failed: { docId: string; reason: string }[];
+}> {
   const body = await jsonOrThrow<{
-    data: { operationId: string | null; moved: string[]; skipped: string[]; failed: unknown[] };
+    data: {
+      operationId: string | null;
+      moved: string[];
+      skipped: string[];
+      skippedDetails: { docId: string; reason: string }[];
+      failed: { docId: string; reason: string }[];
+    };
   }>(
     await fetch("/api/kb/documents/batch-move", {
       method: "POST",
@@ -206,16 +229,23 @@ export async function undoMove(operationId: string): Promise<void> {
   );
 }
 
-export async function uploadDocument(
+export async function startIngestJob(
   file: File,
-  folder?: string | null,
-): Promise<{ filename: string; chunks: number; duplicated: boolean; folder: string }> {
+  folder: string,
+): Promise<{ jobId: string; totalDocs: number }> {
   const form = new FormData();
   form.append("file", file);
-  if (folder) form.append("folder", folder);
-  const body = await jsonOrThrow<{
-    data: { filename: string; chunks: number; duplicated: boolean; folder: string };
-  }>(await fetch("/api/kb/ingest", { method: "POST", body: form }));
+  form.append("folder", folder);
+  const body = await jsonOrThrow<{ data: { jobId: string; totalDocs: number } }>(
+    await fetch("/api/kb/ingest/jobs", { method: "POST", body: form }),
+  );
+  return body.data;
+}
+
+export async function fetchIngestJob(jobId: string): Promise<IngestJob> {
+  const body = await jsonOrThrow<{ data: IngestJob }>(
+    await fetch(`/api/kb/ingest/jobs/${jobId}`),
+  );
   return body.data;
 }
 

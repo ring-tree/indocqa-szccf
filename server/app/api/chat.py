@@ -37,6 +37,17 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             folder = normalize_folder(req.folder, default=None)
         except FolderPathError as e:
             raise ParamError(str(e)) from e
+    folders: list[str] = []
+    for item in req.folders or []:
+        try:
+            path = normalize_folder(item, default=None)
+        except FolderPathError as e:
+            raise ParamError(str(e)) from e
+        if path and path not in folders:
+            folders.append(path)
+    if folder and folder not in folders:
+        folders.insert(0, folder)
+    folder = None
 
     async def event_gen():
         async for ev in pipeline.chat_stream(
@@ -47,6 +58,7 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             session_id=req.session_id,
             profile=None if req.profile in (None, "auto") else req.profile,
             folder=folder,
+            folders=folders or None,
         ):
             if ev["event"] == "done":
                 ev["data"]["request_id"] = rid

@@ -44,13 +44,16 @@ async def lifespan(app: FastAPI):
     if removed:
         logger.info("会话清理：删除 %s 个超过 %s 天的会话", removed, settings.session_ttl_days)
     try:
-        from app.indexing.folders import migrate_folders
+        from app.indexing.folders import migrate_folders, normalize_display_names
 
         stats = migrate_folders(settings)
         if stats.get("migrated"):
             logger.info(
                 "目录迁移：%s 份文档补分类，目录 %s 个", stats["migrated"], stats["folders"]
             )
+        renamed = normalize_display_names(settings)
+        if renamed:
+            logger.info("文档名修正：%s 份上传文档去除临时前缀", renamed)
     except Exception as e:  # noqa: BLE001 迁移失败不应阻塞服务启动
         logger.warning("目录迁移跳过：%s", e)
     task = asyncio.create_task(_session_gc(settings))

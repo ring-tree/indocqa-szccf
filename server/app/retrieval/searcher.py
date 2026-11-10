@@ -61,6 +61,7 @@ def search(
     query_lex: str | None = None,
     strategy: str = "hybrid",
     folder: str | None = None,
+    folders: list[str] | None = None,
 ) -> list[Hit]:
     """混合检索入口。
 
@@ -69,7 +70,7 @@ def search(
     - strategy：hybrid 两路融合；keyword 仅 BM25（故障码等精确匹配）；vector 仅向量；
       none 直接返回空（寒暄等无需检索）。
     - min_sim 仅作用于向量命中那一路。
-    - folder：目录子树过滤（含自身），空表示全库。
+    - folder/folders：目录子树过滤（含自身），空表示全库。
     """
     if strategy == "none":
         return []
@@ -77,13 +78,13 @@ def search(
     top_k = top_k or settings.top_k_default
     lex = query_lex or query
 
-    allowed_paths: set[str] | None = None
-    if folder:
-        from app.indexing.folders import descendants
-        from app.indexing.manifest import Manifest
+    from app.indexing.folders import scope_paths
 
-        paths = descendants(folder, Manifest(Manifest.path_for(settings)).folders())
-        allowed_paths = set(paths) or {folder}
+    has_scope = bool(folder or folders)
+    scope = scope_paths(settings, folder, folders) if has_scope else []
+    if has_scope and not scope:
+        return []
+    allowed_paths: set[str] | None = set(scope) if scope else None
 
     by_id: dict[str, dict] = {}
     ranks: dict[str, float] = {}
@@ -92,7 +93,7 @@ def search(
     if strategy != "keyword":
         if min_sim is None:
             min_sim = settings.sim_threshold
-        for rank, h in enumerate(store.query(settings, query, top_k * EXPAND, folder=folder)):
+        for rank, h in enumerate(store.query(settings, query, top_k * EXPAND, folders=scope)):
             if h["sim"] < min_sim:
                 continue
             vec_rank[h["chunk_id"]] = rank

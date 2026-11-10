@@ -24,6 +24,8 @@ def ingest_file(
     settings=None,
     stored_name: str | None = None,
     folder: str | None = None,
+    progress=None,
+    display_name: str | None = None,
 ) -> dict:
     settings = settings or get_settings()
     started = time.perf_counter()
@@ -36,6 +38,8 @@ def ingest_file(
         existed = manifest.has_hash(content_hash)
         if existed:
             info = manifest.get(existed)
+            if progress:
+                progress("done", 0, 0)
             return {
                 "docId": existed,
                 "filename": info["filename"],
@@ -47,8 +51,17 @@ def ingest_file(
             }
 
         doc = load_document(path)
+        if display_name:
+            # 上传临时文件带随机前缀，展示与引用统一使用用户原始文件名
+            doc.filename = display_name
+        if progress:
+            progress("parsing", 0, 0)
         children, parents = build_chunks(doc)
+        if progress:
+            progress("chunking", len(children), len(children))
         if not children:
+            if progress:
+                progress("done", 0, 0)
             return {
                 "docId": doc.doc_id,
                 "filename": doc.filename,
@@ -59,7 +72,9 @@ def ingest_file(
                 "duplicated": False,
             }
         try:
-            store.add_children(settings, children, parents, doc.filename, target_folder)
+            store.add_children(
+                settings, children, parents, doc.filename, target_folder, progress=progress
+            )
         except Exception:
             # 补偿：向量/父块/BM25 任一环节失败时不留下孤儿块
             try:
@@ -83,6 +98,8 @@ def ingest_file(
         for path_item in ancestors(target_folder):
             manifest.ensure_folder(path_item)
         manifest.save()
+        if progress:
+            progress("done", len(children), len(children))
         return {
             "docId": doc.doc_id,
             "filename": doc.filename,

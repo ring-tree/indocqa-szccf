@@ -99,4 +99,29 @@ export interface ClassificationResult {
   error?: string;
 }
 
+export interface EmbeddingStatus {
+  mode: string;
+  backend: string;
+  model: string;
+}
+
+export interface HealthInfo {
+  status: string;
+  version: string;
+  kb: { documents: number | null; chunks: number | null; state: string };
+  llm: { configured: boolean; reachable: boolean | null };
+  embedding: EmbeddingStatus;
+}
+
+export interface IngestJob {
+  jobId: string;
+  status: "queued" | "running" | "done" | "error";
+  percent: number;
+  currentDoc: number;
+  totalDocs: number;
+  message: string;
+  result?: { filename: string; chunks: number; duplicated: boolean; folder: string };
+  error?: string | null;
+}
+
 export type ChatMode = "kb" | "direct";

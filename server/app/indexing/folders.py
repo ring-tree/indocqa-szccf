@@ -75,6 +75,28 @@ def descendants(folder: str, folders: list[str]) -> list[str]:
     return sorted({folder, *(f for f in folders if is_within(f, folder))})
 
 
+def scope_paths(settings, folder: str | None = None, folders: list[str] | None = None) -> list[str]:
+    """合并单目录/多目录检索范围，展开为完整子树路径集合。"""
+    requested: list[str] = []
+    if folder:
+        requested.append(folder)
+    requested.extend(folders or [])
+    if not requested:
+        return []
+    known = Manifest(Manifest.path_for(settings)).folders()
+    result: set[str] = set()
+    for raw in requested:
+        try:
+            path = normalize_folder(raw, default=None)
+        except FolderPathError:
+            continue
+        if not path:
+            continue
+        result.add(path)
+        result.update(item for item in known if is_within(item, path))
+    return sorted(result)
+
+
 def folder_counts(documents: dict) -> dict[str, int]:
     counts: dict[str, int] = {}
     for info in documents.values():
@@ -96,6 +118,29 @@ def infer_folder(filename: str) -> str:
     if "fixture" in name or "术语混写" in name:
         return "评测夹具"
     return DEFAULT_FOLDER
+
+
+def normalize_display_names(settings) -> int:
+    """修正历史上传文档的展示名：stored_name 带 8 位随机前缀时去掉前缀。"""
+    import re
+
+    from app.indexing import store
+
+    manifest = Manifest(Manifest.path_for(settings))
+    changed = 0
+    for doc_id, info in manifest.documents().items():
+        name = info.get("filename") or ""
+        stored = info.get("stored_name") or ""
+        match = re.match(r"^[0-9a-f]{8}_(.+)$", name)
+        if not match or stored != name:
+            continue
+        new_name = match.group(1)
+        store.update_doc_name(settings, doc_id, new_name)
+        info["filename"] = new_name
+        changed += 1
+    if changed:
+        manifest.save()
+    return changed
 
 
 def migrate_folders(settings) -> dict:

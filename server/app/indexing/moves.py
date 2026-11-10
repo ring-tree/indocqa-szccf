@@ -56,6 +56,7 @@ def batch_move(settings, doc_ids: list[str], folder: str) -> dict:
     operation_id = f"mv_{int(time.time())}_{uuid4().hex[:8]}"
     moved: list[str] = []
     skipped: list[str] = []
+    skipped_details: list[dict] = []
     failed: list[dict] = []
     items: list[dict] = []
 
@@ -70,6 +71,7 @@ def batch_move(settings, doc_ids: list[str], folder: str) -> dict:
             current = info.get("folder") or DEFAULT_FOLDER
             if current == target:
                 skipped.append(doc_id)
+                skipped_details.append({"docId": doc_id, "reason": "已在目标目录"})
                 continue
             try:
                 store.update_doc_folder(settings, doc_id, target)
@@ -102,6 +104,7 @@ def batch_move(settings, doc_ids: list[str], folder: str) -> dict:
         "target": target,
         "moved": moved,
         "skipped": skipped,
+        "skippedDetails": skipped_details,
         "failed": failed,
     }
 

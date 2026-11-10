@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
+import ModelPicker from "../components/ModelPicker";
 import {
   batchMoveDocuments,
   classifyDocument,
@@ -8,18 +9,23 @@ import {
   deleteFolder,
   fetchDocuments,
   fetchFolders,
+  fetchHealth,
+  fetchIngestJob,
   fetchModels,
   previewDocument,
   renameFolder,
   sendClassifyFeedback,
+  startIngestJob,
   undoMove,
-  uploadDocument,
   type PreviewReport,
 } from "../lib/api";
 import type {
   ClassificationResult,
+  EmbeddingStatus,
+  IngestJob,
   KBDocument,
   KBFolder,
+  ModelProfile,
 } from "../lib/types";
 
 interface Props {
@@ -41,7 +47,29 @@ interface ConfirmMove {
   suggested?: string;
 }
 
+interface BatchAiState {
+  open: boolean;
+  phase: "confirm" | "running" | "done";
+  total: number;
+  current: number;
+  percent: number;
+  message: string;
+  result?: { moved: number; skipped: number; low: number; failed: number };
+}
+
 const DEFAULT_FOLDER = "未分类";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function vectorLabel(status: EmbeddingStatus | null): string {
+  if (!status) return "检测中…";
+  if (status.backend.startsWith("ollama-")) return `Ollama · ${status.model}`;
+  if (status.backend.startsWith("fe-")) return `本地 · ${status.model}`;
+  if (status.backend === "minilm") return "内置 MiniLM";
+  return status.backend || status.mode;
+}
 
 function confidenceLabel(level: string): string {
   return level === "high" ? "高" : level === "mid" ? "中" : "低";
@@ -351,7 +379,19 @@ function DocsView({ className = "", onChanged }: Props) {
   const [treeQuery, setTreeQuery] = useState("");
   const [pending, setPending] = useState<PendingItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [models, setModels] = useState<ModelProfile[]>([]);
+  const [batchProfile, setBatchProfile] = useState("");
   const [aiAvailable, setAiAvailable] = useState(false);
+  const [vectorMode, setVectorMode] = useState<EmbeddingStatus | null>(null);
+  const [ingestProgress, setIngestProgress] = useState<{
+    percent: number;
+    current: number;
+    total: number;
+    message: string;
+    filename: string;
+  } | null>(null);
+  const [ingesting, setIngesting] = useState(false);
+  const [batchAi, setBatchAi] = useState<BatchAiState | null>(null);
   const [drag, setDrag] = useState<{ ids: string[]; source: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ path: string; valid: boolean } | null>(null);
   const [confirmMove, setConfirmMove] = useState<ConfirmMove | null>(null);
@@ -396,11 +436,27 @@ function DocsView({ className = "", onChanged }: Props) {
     void refresh();
   }, [refresh]);
 
+  const loadHealth = useCallback(() => {
+    fetchHealth()
+      .then((info) => setVectorMode(info.embedding))
+      .catch(() => setVectorMode(null));
+  }, []);
+
   useEffect(() => {
     fetchModels()
-      .then((list) => setAiAvailable(list.length > 0))
-      .catch(() => setAiAvailable(false));
-  }, []);
+      .then((list) => {
+        setModels(list);
+        setBatchProfile(list[0]?.id ?? "");
+        setAiAvailable(list.length > 0);
+      })
+      .catch(() => {
+        setModels([]);
+        setAiAvailable(false);
+      });
+    loadHealth();
+    const timer = window.setInterval(loadHealth, 30000);
+    return () => window.clearInterval(timer);
+  }, [loadHealth]);
 
   useEffect(() => {
     if (!undo) return;
@@ -448,17 +504,79 @@ function DocsView({ className = "", onChanged }: Props) {
     setUploading(false);
   }
 
-  async function confirmIngest(item: PendingItem) {
-    setPending((p) => p.filter((x) => x.file !== item.file));
-    setMessage(`正在入库 ${item.file.name} → ${item.target}…`);
-    try {
-      const result = await uploadDocument(item.file, item.target);
-      setMessage(
-        `${result.filename}: ${result.duplicated ? "内容已存在，跳过" : `入库 ${result.chunks} 块`} · ${result.folder}`,
+  async function ingestOne(item: PendingItem, current: number, total: number): Promise<IngestJob> {
+    setIngestProgress({
+      percent: Math.round(((current - 1) / total) * 100),
+      current,
+      total,
+      message: `正在入库 ${item.file.name}`,
+      filename: item.file.name,
+    });
+    const started = await startIngestJob(item.file, item.target);
+    for (;;) {
+      await sleep(400);
+      const job = await fetchIngestJob(started.jobId);
+      const overall = Math.min(
+        100,
+        Math.round(((current - 1 + job.percent / 100) / total) * 100),
       );
+      setIngestProgress({
+        percent: overall,
+        current,
+        total,
+        message: job.message,
+        filename: item.file.name,
+      });
+      if (job.status === "done") return job;
+      if (job.status === "error") throw new Error(job.error || job.message || "入库失败");
+    }
+  }
+
+  async function confirmIngest(item: PendingItem) {
+    if (ingesting) return;
+    setIngesting(true);
+    try {
+      const job = await ingestOne(item, 1, 1);
+      setPending((p) => p.filter((x) => x.file !== item.file));
+      const result = job.result;
+      setMessage(
+        `${result?.filename ?? item.file.name}: ${
+          result?.duplicated ? "内容已存在，跳过" : `入库 ${result?.chunks ?? 0} 块`
+        } · ${result?.folder ?? item.target}`,
+      );
+      await refresh();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "入库失败");
+    } finally {
+      setIngesting(false);
+      setIngestProgress(null);
     }
+  }
+
+  async function ingestAll() {
+    if (ingesting || pending.length === 0) return;
+    setIngesting(true);
+    const items = [...pending];
+    let done = 0;
+    let errorText = "";
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      try {
+        await ingestOne(item, index + 1, items.length);
+        setPending((p) => p.filter((x) => x.file !== item.file));
+        done += 1;
+      } catch (e) {
+        errorText = `${item.file.name}: ${e instanceof Error ? e.message : "入库失败"}`;
+        break;
+      }
+    }
+    setMessage(
+      errorText
+        ? `已完成 ${done}/${items.length} 份文档入库；${errorText}`
+        : `已完成 ${done}/${items.length} 份文档入库`,
+    );
+    setIngesting(false);
+    setIngestProgress(null);
     await refresh();
   }
 
@@ -590,10 +708,12 @@ function DocsView({ className = "", onChanged }: Props) {
       if (result.operationId) {
         setUndo({ opId: result.operationId, count: result.moved.length, target: confirmMove.target });
       }
+      const skipped = result.skippedDetails?.length ?? result.skipped.length;
+      const failed = result.failed.length;
       setMessage(
-        result.failed.length
-          ? `已移动 ${result.moved.length} 份，失败 ${result.failed.length} 份`
-          : `已移动 ${result.moved.length} 份文档到 ${confirmMove.target}`,
+        `成功移动 ${result.moved.length} 份${
+          skipped ? `，跳过 ${skipped} 份（已在目标目录）` : ""
+        }${failed ? `，失败 ${failed} 份` : ""}`,
       );
       if (feedback) {
         // 反馈失败不影响已完成的移动
@@ -681,6 +801,121 @@ function DocsView({ className = "", onChanged }: Props) {
     setAi(null);
   }
 
+  function openBatchAi() {
+    if (!aiAvailable || ingesting || batchAi?.phase === "running") return;
+    void fetchDocuments(null)
+      .then((allDocs) => {
+        if (allDocs.length === 0) {
+          setMessage("知识库暂无文档，无法执行批量分类");
+          return;
+        }
+        setBatchAi({
+          open: true,
+          phase: "confirm",
+          total: allDocs.length,
+          current: 0,
+          percent: 0,
+          message: "等待开始",
+        });
+      })
+      .catch((e) => setMessage(e instanceof Error ? e.message : "读取文档失败"));
+  }
+
+  async function runBatchAi() {
+    if (!batchAi || batchAi.phase === "running") return;
+    let snapshot: KBDocument[];
+    try {
+      snapshot = await fetchDocuments(null);
+    } catch (e) {
+      setBatchAi(null);
+      setMessage(e instanceof Error ? e.message : "读取文档失败");
+      return;
+    }
+    const total = snapshot.length;
+    if (total === 0) {
+      setBatchAi(null);
+      setMessage("知识库暂无文档，无法执行批量分类");
+      return;
+    }
+    setBatchAi({
+      open: true,
+      phase: "running",
+      total,
+      current: 0,
+      percent: 0,
+      message: "正在分析文档",
+    });
+    const groups = new Map<string, string[]>();
+    let low = 0;
+    let failed = 0;
+    let skipped = 0;
+    let moved = 0;
+
+    for (let index = 0; index < snapshot.length; index += 1) {
+      const doc = snapshot[index];
+      setBatchAi((current) =>
+        current
+          ? {
+              ...current,
+              current: index + 1,
+              percent: Math.round((index / total) * 80),
+              message: `正在分析 ${doc.filename}`,
+            }
+          : current,
+      );
+      try {
+        const result = await classifyDocument(doc.docId, batchProfile || null);
+        const top = result.candidates?.find((item) => item.confidence >= 0.6);
+        if (!top) {
+          low += 1;
+          continue;
+        }
+        if (top.path === (doc.folder || DEFAULT_FOLDER)) {
+          skipped += 1;
+          continue;
+        }
+        const ids = groups.get(top.path) ?? [];
+        ids.push(doc.docId);
+        groups.set(top.path, ids);
+      } catch {
+        failed += 1;
+      }
+    }
+
+    let groupIndex = 0;
+    for (const [target, ids] of groups) {
+      groupIndex += 1;
+      setBatchAi((current) =>
+        current
+          ? {
+              ...current,
+              percent: 80 + Math.round((groupIndex / Math.max(groups.size, 1)) * 20),
+              message: `应用分类 ${groupIndex}/${groups.size}：${target}`,
+            }
+          : current,
+      );
+      try {
+        const result = await batchMoveDocuments(ids, target);
+        moved += result.moved.length;
+        skipped += result.skipped.length;
+        failed += result.failed.length;
+      } catch {
+        failed += ids.length;
+      }
+    }
+
+    setBatchAi({
+      open: true,
+      phase: "done",
+      total,
+      current: total,
+      percent: 100,
+      message: `分类完成：成功移动 ${moved} 篇 · 跳过 ${skipped} 篇 · 低置信度 ${low} 篇 · 失败 ${failed} 篇`,
+      result: { moved, skipped, low, failed },
+    });
+    await refresh();
+  }
+
   const visibleFolders = useMemo(() => {
     const term = treeQuery.trim().toLowerCase();
     if (!term) {
@@ -706,6 +941,9 @@ function DocsView({ className = "", onChanged }: Props) {
     [docs, query],
   );
   const totalChunks = docs.reduce((n, d) => n + d.chunks, 0);
+  const totalDocCount = folders
+    .filter((item) => !item.parent)
+    .reduce((sum, item) => sum + item.documentCount, 0);
   const allSelected = filtered.length > 0 && filtered.every((d) => selected.has(d.docId));
 
   function toggleSelect(docId: string) {
@@ -743,23 +981,31 @@ function DocsView({ className = "", onChanged }: Props) {
               按多级目录归档文档；拖动文档到左侧目录即可移动，支持批量选择与撤销。
             </p>
           </div>
-          <label
-            htmlFor="file-upload"
-            aria-disabled={uploading}
-            className="ui-upload px-4 py-2 text-xs"
-          >
-            {uploading ? "预检中…" : "上传文档"}
-            <input
-              id="file-upload"
-              type="file"
-              multiple
-              accept=".pdf,.md,.txt"
-              className="sr-only"
-              disabled={uploading}
-              onChange={(e) => void onSelectFiles(e.target.files)}
-              aria-label="选择要上传的文档"
-            />
-          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className="ui-vector-badge"
+              title={`向量化模式：${vectorMode?.mode ?? "auto"}`}
+            >
+              向量化：{vectorLabel(vectorMode)}
+            </span>
+            <label
+              htmlFor="file-upload"
+              aria-disabled={uploading || ingesting}
+              className="ui-upload px-4 py-2 text-xs"
+            >
+              {uploading ? "预检中…" : "上传文档"}
+              <input
+                id="file-upload"
+                type="file"
+                multiple
+                accept=".pdf,.md,.txt"
+                className="sr-only"
+                disabled={uploading || ingesting}
+                onChange={(e) => void onSelectFiles(e.target.files)}
+                aria-label="选择要上传的文档"
+              />
+            </label>
+          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
@@ -777,9 +1023,26 @@ function DocsView({ className = "", onChanged }: Props) {
           </div>
         </div>
 
-        {message && (
+        {(message || ingestProgress) && (
           <div role="status" aria-live="polite" className="ui-card px-4 py-3 text-xs text-[var(--muted)]">
-            {message}
+            {message && <div>{message}</div>}
+            {ingestProgress && (
+              <div className="ui-progress" aria-label="索引构建进度">
+                <div className="ui-progress-head">
+                  <span>{ingestProgress.message}</span>
+                  <span>{ingestProgress.percent}%</span>
+                </div>
+                <div className="ui-progress-track">
+                  <div
+                    className="ui-progress-fill"
+                    style={{ width: `${ingestProgress.percent}%` }}
+                  />
+                </div>
+                <div className="ui-progress-meta">
+                  文档 {ingestProgress.current}/{ingestProgress.total} · {ingestProgress.filename}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -929,6 +1192,21 @@ function DocsView({ className = "", onChanged }: Props) {
               </div>
             )}
 
+            {pending.length > 1 && (
+              <div className="ui-batch-bar">
+                <span>待入库 {pending.length} 份文档</span>
+                <span className="flex-1" />
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-sm ui-btn-primary"
+                  disabled={ingesting}
+                  onClick={() => void ingestAll()}
+                >
+                  {ingesting ? "入库中…" : "全部入库"}
+                </button>
+              </div>
+            )}
+
             {pending.map((item) => {
               const classification = item.report.classification;
               const candidates = classification?.candidates ?? [];
@@ -947,8 +1225,8 @@ function DocsView({ className = "", onChanged }: Props) {
                     </div>
                     <div className="flex shrink-0 gap-2">
                       {item.report.status !== "rejected" && (
-                        <button type="button" onClick={() => void confirmIngest(item)} className="ui-btn ui-btn-primary">
-                          确认入库
+                        <button type="button" onClick={() => void confirmIngest(item)} disabled={ingesting} className="ui-btn ui-btn-primary">
+                          {ingesting ? "入库中…" : "确认入库"}
                         </button>
                       )}
                       <button
@@ -1061,6 +1339,22 @@ function DocsView({ className = "", onChanged }: Props) {
               />
               <button type="button" onClick={() => void refresh()} aria-label="刷新文档列表" className="ui-btn ui-btn-ghost">
                 刷新
+              </button>
+              <span className="flex-1" />
+              <ModelPicker
+                models={models}
+                profile={batchProfile}
+                onSelect={setBatchProfile}
+                disabled={!aiAvailable || batchAi?.phase === "running" || ingesting}
+              />
+              <button
+                type="button"
+                className="ui-btn ui-btn-primary"
+                disabled={!aiAvailable || totalDocCount === 0 || batchAi?.phase === "running" || ingesting}
+                title={!aiAvailable ? "无可用模型" : "对知识库全部文档执行 AI 分类"}
+                onClick={openBatchAi}
+              >
+                AI 批量分类
               </button>
             </div>
 
@@ -1223,13 +1517,111 @@ function DocsView({ className = "", onChanged }: Props) {
         />
       )}
 
+      {batchAi?.open && (
+        <div
+          className="ui-modal-backdrop"
+          role="presentation"
+          onClick={batchAi.phase === "running" ? undefined : () => setBatchAi(null)}
+        >
+          <div
+            className="ui-modal ui-ai-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="AI 批量分类"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="ui-modal-head">
+              <h3>AI 批量分类</h3>
+              {batchAi.phase !== "running" && (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-sm ui-btn-ghost"
+                  onClick={() => setBatchAi(null)}
+                  aria-label="关闭"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            {batchAi.phase === "confirm" && (
+              <>
+                <p className="ui-ai-doc">
+                  将对知识库全部 <strong>{batchAi.total}</strong> 篇文档执行 AI 分类。
+                </p>
+                <p className="ui-confirm-hint">
+                  仅更新文档目录元数据，<strong>不重建向量索引</strong>；向量数量与内容保持不变。
+                </p>
+                <p className="ui-confirm-hint">置信度低于 60% 的文档保持不变。</p>
+                <div className="ui-modal-actions">
+                  <button type="button" className="ui-btn ui-btn-ghost" onClick={() => setBatchAi(null)}>
+                    取消
+                  </button>
+                  <button type="button" className="ui-btn ui-btn-primary" onClick={() => void runBatchAi()}>
+                    开始分类
+                  </button>
+                </div>
+              </>
+            )}
+
+            {batchAi.phase === "running" && (
+              <>
+                <div className="ui-progress">
+                  <div className="ui-progress-head">
+                    <span>{batchAi.message}</span>
+                    <span>{batchAi.percent}%</span>
+                  </div>
+                  <div className="ui-progress-track">
+                    <div className="ui-progress-fill" style={{ width: `${batchAi.percent}%` }} />
+                  </div>
+                  <div className="ui-progress-meta">
+                    文档 {batchAi.current}/{batchAi.total}
+                  </div>
+                </div>
+                <p className="ui-confirm-hint">
+                  正在逐篇分析并应用分类；仅更新目录元数据，不重建向量索引，请勿关闭页面。
+                </p>
+              </>
+            )}
+
+            {batchAi.phase === "done" && batchAi.result && (
+              <>
+                <p className="ui-batch-summary" role="status">
+                  {batchAi.message}
+                </p>
+                <div className="ui-batch-result">
+                  <p>成功移动：<strong>{batchAi.result.moved}</strong> 篇</p>
+                  <p>跳过：{batchAi.result.skipped} 篇（已在目标目录）</p>
+                  <p>低置信度未分类：{batchAi.result.low} 篇</p>
+                  <p>失败：{batchAi.result.failed} 篇</p>
+                </div>
+                <p className="ui-confirm-hint">本次仅更新目录元数据，未重建向量索引。</p>
+                <div className="ui-modal-actions">
+                  <button type="button" className="ui-btn ui-btn-primary" onClick={() => setBatchAi(null)}>
+                    完成
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {undo && (
         <div className="ui-undo-toast" role="status" aria-live="polite">
-          <span>
+          <span className="flex-1">
             已移动 {undo.count} 份文档到「{undo.target}」
           </span>
           <button type="button" className="ui-btn ui-btn-sm ui-btn-ghost" onClick={() => void onUndo()}>
             撤销
+          </button>
+          <button
+            type="button"
+            className="ui-undo-close"
+            onClick={() => setUndo(null)}
+            aria-label="关闭撤销提示"
+          >
+            ×
           </button>
         </div>
       )}

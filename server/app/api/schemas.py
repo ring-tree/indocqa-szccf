@@ -14,11 +14,18 @@ class LLMStatus(BaseModel):
     reachable: bool | None = None
 
 
+class EmbeddingStatus(BaseModel):
+    mode: str = "auto"
+    backend: str = ""
+    model: str = ""
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     version: str
     kb: KBStats
     llm: LLMStatus
+    embedding: EmbeddingStatus = EmbeddingStatus()
 
 
 class ChatRequest(BaseModel):
@@ -28,7 +35,8 @@ class ChatRequest(BaseModel):
     top_k: int | None = Field(default=None, ge=1, le=20, alias="topK")
     # auto / primary / backup；不传等同 auto
     profile: str | None = Field(default=None, max_length=32)
-    # 知识库目录检索范围（空=全库）
+    # 知识库目录检索范围（空=全库）；folders 支持多选目录
     folder: str | None = Field(default=None, max_length=200)
+    folders: list[str] | None = Field(default=None, max_length=20)
 
     model_config = {"populate_by_name": True}

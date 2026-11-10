@@ -226,3 +226,15 @@ def get_embedder(settings) -> BaseEmbedder:
                 settings.embed_local_model, settings.embed_local_batch, settings.embed_cache_dir
             )
     return _embedder_cache[key]
+
+
+def backend_id_for(settings) -> str:
+    """不加载模型，仅解析当前生效的向量化后端标识（供健康检查展示）。"""
+    backend = settings.embed_backend
+    if backend == "auto":
+        backend = _resolve_auto(settings)
+    if backend == "ollama":
+        return f"ollama-{settings.ollama_embed_model.replace(':', '-')}"
+    if backend == "minilm":
+        return "minilm"
+    return "fe-" + settings.embed_local_model.split("/")[-1].replace(":", "-")
