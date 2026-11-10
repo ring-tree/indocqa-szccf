@@ -1,4 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import Message from "../components/Message";
 import ModelPicker from "../components/ModelPicker";
 import {
@@ -100,6 +109,8 @@ function ChatView({
   const [notice, setNotice] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaWidthRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const currentRef = useRef<string | null>(null);
   const runIdRef = useRef(0);
@@ -491,6 +502,34 @@ function ChatView({
     setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
   }
 
+  const resizeTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const styles = getComputedStyle(el);
+    const min = parseFloat(styles.minHeight) || 0;
+    const max = parseFloat(styles.maxHeight) || Number.POSITIVE_INFINITY;
+    el.style.height = "auto";
+    const next = Math.max(min, Math.min(el.scrollHeight, max));
+    el.style.height = `${next}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    resizeTextarea();
+  }, [input, resizeTextarea]);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      if (Math.abs(width - textareaWidthRef.current) < 0.5) return;
+      textareaWidthRef.current = width;
+      resizeTextarea();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [resizeTextarea]);
+
   return (
     <div className={`ui-chat-view flex min-h-0 flex-1 flex-col ${className}`}>
       <div className="ui-modebar flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6">
@@ -656,6 +695,7 @@ function ChatView({
             输入问题
           </label>
           <textarea
+            ref={textareaRef}
             id="chat-input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -665,7 +705,7 @@ function ChatView({
                 void ask();
               }
             }}
-            rows={2}
+            rows={1}
             maxLength={2000}
             disabled={mode === "direct" && !hasModels}
             aria-describedby="chat-hint"
@@ -676,7 +716,7 @@ function ChatView({
                   ? "输入问题，Enter 发送，Shift+Enter 换行"
                   : "直接与模型对话"
             }
-            className="ui-textarea max-h-40 min-h-[2.75rem] w-full resize-none bg-transparent px-3 py-2 text-sm outline-none disabled:cursor-not-allowed"
+            className="ui-textarea w-full bg-transparent px-3 py-2 text-sm outline-none disabled:cursor-not-allowed"
           />
           <span id="chat-hint" className="sr-only">
             按 Enter 发送，Shift 加 Enter 换行，最多 2000 字
