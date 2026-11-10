@@ -47,14 +47,32 @@ interface ConfirmMove {
   suggested?: string;
 }
 
+interface BatchPlanItem {
+  docId: string;
+  filename: string;
+  from: string;
+  to: string;
+  action: "move" | "new" | "keep" | "low";
+  confidence: number;
+  reason: string;
+}
+
 interface BatchAiState {
   open: boolean;
-  phase: "confirm" | "running" | "done";
+  phase: "confirm" | "computing" | "review" | "applying" | "done";
   total: number;
   current: number;
   percent: number;
   message: string;
-  result?: { moved: number; skipped: number; low: number; failed: number };
+  plan?: BatchPlanItem[];
+  result?: {
+    moved: number;
+    skipped: number;
+    low: number;
+    failed: number;
+    kept?: number;
+    newFolders?: number;
+  };
 }
 
 const DEFAULT_FOLDER = "未分类";
@@ -129,16 +147,23 @@ function PathPicker({
         <ul className="ui-picker-list">
           {filtered.map((f) => {
             const depth = f.path.split("/").length - 1;
+            const isLeaf = !folders.some((item) => item.path.startsWith(f.path + "/"));
             return (
               <li key={f.path}>
                 <button
                   type="button"
-                  onClick={() => onPick(f.path)}
+                  disabled={!isLeaf}
+                  onClick={() => isLeaf && onPick(f.path)}
                   style={{ paddingLeft: 10 + depth * 14 }}
-                  className={`ui-folder-item ${value === f.path ? "is-active" : ""}`}
+                  className={`ui-folder-item ${value === f.path ? "is-active" : ""} ${
+                    isLeaf ? "" : "is-disabled"
+                  }`}
+                  title={isLeaf ? f.path : `${f.path} 含子目录，仅最末级目录可放文档`}
                 >
                   <span className="truncate">{f.path}</span>
-                  <span className="ui-folder-count">{f.documentCount}</span>
+                  <span className="ui-folder-count">
+                    {isLeaf ? f.documentCount : "含子目录"}
+                  </span>
                 </button>
               </li>
             );
@@ -369,6 +394,67 @@ function AiPanel({
   );
 }
 
+interface PreviewNode {
+  path: string;
+  name: string;
+  children: PreviewNode[];
+  docs: string[];
+}
+
+function buildPreviewTree(folders: KBFolder[], plan: BatchPlanItem[]): PreviewNode[] {
+  const map = new Map<string, PreviewNode>();
+  const ensure = (path: string): PreviewNode => {
+    if (map.has(path)) return map.get(path)!;
+    const parts = path.split("/");
+    const node: PreviewNode = { path, name: parts[parts.length - 1], children: [], docs: [] };
+    map.set(path, node);
+    return node;
+  };
+  for (const folder of folders) ensure(folder.path);
+  for (const item of plan) {
+    if (item.action === "move" || item.action === "new") ensure(item.to);
+  }
+  for (const path of [...map.keys()]) {
+    const index = path.lastIndexOf("/");
+    if (index > 0) ensure(path.slice(0, index)).children.push(map.get(path)!);
+  }
+  for (const item of plan) {
+    const target = item.action === "keep" || item.action === "low" ? item.from : item.to;
+    if (target) ensure(target).docs.push(item.filename);
+  }
+  const roots = [...map.values()].filter((node) => !node.path.includes("/"));
+  const sortNode = (node: PreviewNode) => {
+    node.children.sort((a, b) => a.name.localeCompare(b.name));
+    node.docs.sort((a, b) => a.localeCompare(b));
+    node.children.forEach(sortNode);
+  };
+  roots.sort((a, b) => a.name.localeCompare(b.name));
+  roots.forEach(sortNode);
+  return roots;
+}
+
+function PlanTree({ nodes, depth = 0 }: { nodes: PreviewNode[]; depth?: number }) {
+  return (
+    <ul className="ui-plan-tree" style={{ paddingLeft: depth === 0 ? 0 : 14 }}>
+      {nodes.map((node) => (
+        <li key={node.path}>
+          <div className="ui-plan-folder">
+            <span className="ui-plan-dot" aria-hidden="true" />
+            <span className="truncate">{node.name}</span>
+            <span className="ui-plan-count">{node.docs.length}</span>
+          </div>
+          {node.children.length > 0 && <PlanTree nodes={node.children} depth={depth + 1} />}
+          {node.docs.map((doc) => (
+            <div key={`${node.path}-${doc}`} className="ui-plan-doc" style={{ paddingLeft: 18 }}>
+              {doc}
+            </div>
+          ))}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function DocsView({ className = "", onChanged }: Props) {
   const [docs, setDocs] = useState<KBDocument[]>([]);
   const [folders, setFolders] = useState<KBFolder[]>([]);
@@ -488,13 +574,19 @@ function DocsView({ className = "", onChanged }: Props) {
     for (const file of Array.from(files)) {
       try {
         const report = await previewDocument(file, aiAvailable);
+        const classification = report.classification;
+        const best = classification?.candidates?.find((item) => item.confidence >= 0.6);
+        const proposal = classification?.suggested_new_folder;
+        const fallbackTarget = activeFolder && isLeafFolder(activeFolder)
+          ? activeFolder
+          : DEFAULT_FOLDER;
         setPending((p) => [
           ...p,
           {
             file,
             report,
-            target: activeFolder || DEFAULT_FOLDER,
-            showAi: false,
+            target: best?.path ?? proposal?.path ?? fallbackTarget,
+            showAi: Boolean(best || proposal),
           },
         ]);
       } catch (e) {
@@ -656,7 +748,7 @@ function DocsView({ className = "", onChanged }: Props) {
     if (!drag) return;
     event.preventDefault();
     event.stopPropagation();
-    const valid = drag.source !== path;
+    const valid = drag.source !== path && isLeafFolder(path);
     setDropTarget({ path, valid });
     if (valid && collapsed.has(path) && hasChildren(path) && expandTimer.current === null) {
       expandTimer.current = window.setTimeout(() => {
@@ -674,11 +766,15 @@ function DocsView({ className = "", onChanged }: Props) {
     if (!drag) return;
     event.preventDefault();
     event.stopPropagation();
-    if (drag.source !== path) {
+    if (drag.source !== path && isLeafFolder(path)) {
       setConfirmMove({ ids: drag.ids, source: drag.source, target: path });
       setConfirmError("");
     }
     endDrag();
+  }
+
+  function isLeafFolder(path: string) {
+    return !folders.some((item) => item.path.startsWith(path + "/"));
   }
 
   function hasChildren(path: string) {
@@ -802,7 +898,7 @@ function DocsView({ className = "", onChanged }: Props) {
   }
 
   function openBatchAi() {
-    if (!aiAvailable || ingesting || batchAi?.phase === "running") return;
+    if (!aiAvailable || ingesting || batchBusy) return;
     void fetchDocuments(null)
       .then((allDocs) => {
         if (allDocs.length === 0) {
@@ -821,8 +917,8 @@ function DocsView({ className = "", onChanged }: Props) {
       .catch((e) => setMessage(e instanceof Error ? e.message : "读取文档失败"));
   }
 
-  async function runBatchAi() {
-    if (!batchAi || batchAi.phase === "running") return;
+  async function computeBatchPlan() {
+    if (!batchAi || batchAi.phase === "applying") return;
     let snapshot: KBDocument[];
     try {
       snapshot = await fetchDocuments(null);
@@ -834,31 +930,27 @@ function DocsView({ className = "", onChanged }: Props) {
     const total = snapshot.length;
     if (total === 0) {
       setBatchAi(null);
-      setMessage("知识库暂无文档，无法执行批量分类");
+      setMessage("知识库暂无文档，无法生成分类方案");
       return;
     }
     setBatchAi({
       open: true,
-      phase: "running",
+      phase: "computing",
       total,
       current: 0,
       percent: 0,
-      message: "正在分析文档",
+      message: "正在分析文档并生成方案",
     });
-    const groups = new Map<string, string[]>();
-    let low = 0;
-    let failed = 0;
-    let skipped = 0;
-    let moved = 0;
-
+    const plan: BatchPlanItem[] = [];
     for (let index = 0; index < snapshot.length; index += 1) {
       const doc = snapshot[index];
+      const from = doc.folder || DEFAULT_FOLDER;
       setBatchAi((current) =>
         current
           ? {
               ...current,
               current: index + 1,
-              percent: Math.round((index / total) * 80),
+              percent: Math.round((index / total) * 90),
               message: `正在分析 ${doc.filename}`,
             }
           : current,
@@ -866,22 +958,85 @@ function DocsView({ className = "", onChanged }: Props) {
       try {
         const result = await classifyDocument(doc.docId, batchProfile || null);
         const top = result.candidates?.find((item) => item.confidence >= 0.6);
-        if (!top) {
-          low += 1;
-          continue;
+        if (top) {
+          plan.push({
+            docId: doc.docId,
+            filename: doc.filename,
+            from,
+            to: top.path === from ? from : top.path,
+            action: top.path === from ? "keep" : "move",
+            confidence: top.confidence,
+            reason: top.reason,
+          });
+        } else if (result.suggested_new_folder) {
+          const proposal = result.suggested_new_folder;
+          const exists = folders.some((item) => item.path === proposal.path);
+          plan.push({
+            docId: doc.docId,
+            filename: doc.filename,
+            from,
+            to: proposal.path,
+            action:
+              proposal.path === from ? "keep" : exists ? "move" : "new",
+            confidence: proposal.confidence,
+            reason: proposal.reason,
+          });
+        } else {
+          plan.push({
+            docId: doc.docId,
+            filename: doc.filename,
+            from,
+            to: from,
+            action: "low",
+            confidence: 0,
+            reason: "无可靠推荐",
+          });
         }
-        if (top.path === (doc.folder || DEFAULT_FOLDER)) {
-          skipped += 1;
-          continue;
-        }
-        const ids = groups.get(top.path) ?? [];
-        ids.push(doc.docId);
-        groups.set(top.path, ids);
-      } catch {
-        failed += 1;
+      } catch (e) {
+        plan.push({
+          docId: doc.docId,
+          filename: doc.filename,
+          from,
+          to: from,
+          action: "low",
+          confidence: 0,
+          reason: e instanceof Error ? e.message : "分类失败",
+        });
       }
     }
+    setBatchAi({
+      open: true,
+      phase: "review",
+      total,
+      current: total,
+      percent: 100,
+      message: "方案已生成，确认后执行",
+      plan,
+    });
+  }
 
+  async function executeBatchPlan() {
+    if (!batchAi?.plan) return;
+    const changes = batchAi.plan.filter(
+      (item) => item.action === "move" || item.action === "new",
+    );
+    const groups = new Map<string, string[]>();
+    for (const item of changes) {
+      const ids = groups.get(item.to) ?? [];
+      ids.push(item.docId);
+      groups.set(item.to, ids);
+    }
+    const totalGroups = groups.size;
+    setBatchAi({
+      ...batchAi,
+      phase: "applying",
+      current: 0,
+      percent: 0,
+      message: totalGroups === 0 ? "没有需要执行的变更" : "正在执行分类方案",
+    });
+    let moved = 0;
+    let skipped = 0;
+    let failed = 0;
     let groupIndex = 0;
     for (const [target, ids] of groups) {
       groupIndex += 1;
@@ -889,8 +1044,10 @@ function DocsView({ className = "", onChanged }: Props) {
         current
           ? {
               ...current,
-              percent: 80 + Math.round((groupIndex / Math.max(groups.size, 1)) * 20),
-              message: `应用分类 ${groupIndex}/${groups.size}：${target}`,
+              current: groupIndex,
+              total: totalGroups,
+              percent: Math.round(((groupIndex - 1) / Math.max(totalGroups, 1)) * 100),
+              message: `正在应用 ${groupIndex}/${totalGroups}：${target}`,
             }
           : current,
       );
@@ -903,15 +1060,19 @@ function DocsView({ className = "", onChanged }: Props) {
         failed += ids.length;
       }
     }
-
+    const low = batchAi.plan.filter((item) => item.action === "low").length;
+    const kept = batchAi.plan.filter((item) => item.action === "keep").length;
+    const newFolders = new Set(
+      changes.filter((item) => item.action === "new").map((item) => item.to),
+    ).size;
     setBatchAi({
       open: true,
       phase: "done",
-      total,
-      current: total,
+      total: batchAi.plan.length,
+      current: batchAi.plan.length,
       percent: 100,
-      message: `分类完成：成功移动 ${moved} 篇 · 跳过 ${skipped} 篇 · 低置信度 ${low} 篇 · 失败 ${failed} 篇`,
-      result: { moved, skipped, low, failed },
+      message: `执行完成：移动 ${moved} 篇 · 跳过 ${skipped} 篇 · 新建目录 ${newFolders} 个 · 低置信度 ${low} 篇 · 保持 ${kept} 篇 · 失败 ${failed} 篇`,
+      result: { moved, skipped, low, failed, kept, newFolders },
     });
     await refresh();
   }
@@ -944,6 +1105,18 @@ function DocsView({ className = "", onChanged }: Props) {
   const totalDocCount = folders
     .filter((item) => !item.parent)
     .reduce((sum, item) => sum + item.documentCount, 0);
+  const batchPlan = batchAi?.plan ?? [];
+  const batchChanges = batchPlan.filter(
+    (item) => item.action === "move" || item.action === "new",
+  );
+  const batchNewFolders = [...new Set(
+    batchChanges.filter((item) => item.action === "new").map((item) => item.to),
+  )];
+  const batchKept = batchPlan.filter((item) => item.action === "keep").length;
+  const batchLow = batchPlan.filter((item) => item.action === "low").length;
+  const batchPreview = batchAi?.plan ? buildPreviewTree(folders, batchAi.plan) : [];
+  const batchBusy =
+    batchAi?.phase === "computing" || batchAi?.phase === "applying";
   const allSelected = filtered.length > 0 && filtered.every((d) => selected.has(d.docId));
 
   function toggleSelect(docId: string) {
@@ -1127,7 +1300,11 @@ function DocsView({ className = "", onChanged }: Props) {
                         onClick={() => setActiveFolder(f.path)}
                         style={{ paddingLeft: 4 + depth * 12 }}
                         className={`ui-folder-item ${activeFolder === f.path ? "is-active" : ""}`}
-                        title={`${f.path} · ${f.documentCount} 份文档 / ${f.chunkCount} 块`}
+                        title={
+                          canExpand
+                            ? `${f.path} · 含子目录，仅最末级目录可放文档`
+                            : `${f.path} · ${f.documentCount} 份文档 / ${f.chunkCount} 块`
+                        }
                       >
                         <span className="truncate">{f.name}</span>
                         <span className="ui-folder-count">{f.documentCount}</span>
@@ -1210,6 +1387,8 @@ function DocsView({ className = "", onChanged }: Props) {
             {pending.map((item) => {
               const classification = item.report.classification;
               const candidates = classification?.candidates ?? [];
+              const reliable = candidates.filter((c) => c.confidence >= 0.6);
+              const proposal = classification?.suggested_new_folder;
               const noModel = !aiAvailable || classification?.available === false;
               return (
                 <div key={`${item.file.name}-${item.file.lastModified}`} className="ui-pending-card p-4 sm:p-5">
@@ -1278,32 +1457,64 @@ function DocsView({ className = "", onChanged }: Props) {
                   </div>
                   {item.showAi && (
                     <div className="ui-ingest-ai">
-                      {candidates.length === 0 ? (
+                      {reliable.length === 0 && !proposal && (
                         <p className="text-xs text-[var(--muted)]">暂无可靠推荐，请手动选择目录。</p>
-                      ) : (
-                        candidates.map((c) => (
-                          <label
-                            key={c.path}
-                            className={`ui-ai-candidate ${item.target === c.path ? "is-active" : ""}`}
-                          >
-                            <input
-                              type="radio"
-                              name={`ingest-${item.file.name}`}
-                              checked={item.target === c.path}
-                              onChange={() =>
-                                setPending((p) =>
-                                  p.map((x) => (x.file === item.file ? { ...x, target: c.path } : x)),
-                                )
-                              }
-                            />
-                            <span className="ui-ai-candidate-main">
-                              <span className="ui-ai-path">{c.path}</span>
-                              <span className="ui-ai-reason">{c.reason}</span>
-                            </span>
-                            <ConfidenceBadge level={c.level} value={c.confidence} />
-                          </label>
-                        ))
                       )}
+                      {proposal && (
+                        <label
+                          className={`ui-ai-candidate ${
+                            item.target === proposal.path ? "is-active" : ""
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name={`ingest-${item.file.name}`}
+                            checked={item.target === proposal.path}
+                            onChange={() =>
+                              setPending((p) =>
+                                p.map((x) =>
+                                  x.file === item.file ? { ...x, target: proposal.path } : x,
+                                ),
+                              )
+                            }
+                          />
+                          <span className="ui-ai-candidate-main">
+                            <span className="ui-ai-path">建议新建目录：{proposal.path}</span>
+                            <span className="ui-ai-reason">
+                              {proposal.reason}（目录名：{proposal.name}）
+                            </span>
+                          </span>
+                          <span className="ui-confidence" data-tone="low">
+                            {proposal.isNew === false ? "已有目录" : "新建"}
+                          </span>
+                        </label>
+                      )}
+                      {reliable.map((c) => (
+                        <label
+                          key={c.path}
+                          className={`ui-ai-candidate ${item.target === c.path ? "is-active" : ""}`}
+                        >
+                          <input
+                            type="radio"
+                            name={`ingest-${item.file.name}`}
+                            checked={item.target === c.path}
+                            onChange={() =>
+                              setPending((p) =>
+                                p.map((x) => (x.file === item.file ? { ...x, target: c.path } : x)),
+                              )
+                            }
+                          />
+                          <span className="ui-ai-candidate-main">
+                            <span className="ui-ai-path">{c.path}</span>
+                            <span className="ui-ai-reason">{c.reason}</span>
+                          </span>
+                          <ConfidenceBadge level={c.level} value={c.confidence} />
+                        </label>
+                      ))}
+                      {(reliable.length > 0 || proposal) &&
+                        item.target === (reliable[0]?.path ?? proposal?.path) && (
+                          <p className="ui-ingest-ai-note">已默认采用 AI 推荐，可手动更改。</p>
+                        )}
                       {classification?.fallback && (
                         <p className="text-[10px] text-[var(--warning)]">AI 响应超时，已使用规则推荐。</p>
                       )}
@@ -1345,12 +1556,12 @@ function DocsView({ className = "", onChanged }: Props) {
                 models={models}
                 profile={batchProfile}
                 onSelect={setBatchProfile}
-                disabled={!aiAvailable || batchAi?.phase === "running" || ingesting}
+                disabled={!aiAvailable || batchBusy || ingesting}
               />
               <button
                 type="button"
                 className="ui-btn ui-btn-primary"
-                disabled={!aiAvailable || totalDocCount === 0 || batchAi?.phase === "running" || ingesting}
+                disabled={!aiAvailable || totalDocCount === 0 || batchBusy || ingesting}
                 title={!aiAvailable ? "无可用模型" : "对知识库全部文档执行 AI 分类"}
                 onClick={openBatchAi}
               >
@@ -1521,7 +1732,7 @@ function DocsView({ className = "", onChanged }: Props) {
         <div
           className="ui-modal-backdrop"
           role="presentation"
-          onClick={batchAi.phase === "running" ? undefined : () => setBatchAi(null)}
+          onClick={batchBusy ? undefined : () => setBatchAi(null)}
         >
           <div
             className="ui-modal ui-ai-panel"
@@ -1532,7 +1743,7 @@ function DocsView({ className = "", onChanged }: Props) {
           >
             <div className="ui-modal-head">
               <h3>AI 批量分类</h3>
-              {batchAi.phase !== "running" && (
+              {!batchBusy && (
                 <button
                   type="button"
                   className="ui-btn ui-btn-sm ui-btn-ghost"
@@ -1547,7 +1758,7 @@ function DocsView({ className = "", onChanged }: Props) {
             {batchAi.phase === "confirm" && (
               <>
                 <p className="ui-ai-doc">
-                  将对知识库全部 <strong>{batchAi.total}</strong> 篇文档执行 AI 分类。
+                  将先分析知识库全部 <strong>{batchAi.total}</strong> 篇文档，生成分类方案；确认方案后才执行。
                 </p>
                 <p className="ui-confirm-hint">
                   仅更新文档目录元数据，<strong>不重建向量索引</strong>；向量数量与内容保持不变。
@@ -1557,14 +1768,14 @@ function DocsView({ className = "", onChanged }: Props) {
                   <button type="button" className="ui-btn ui-btn-ghost" onClick={() => setBatchAi(null)}>
                     取消
                   </button>
-                  <button type="button" className="ui-btn ui-btn-primary" onClick={() => void runBatchAi()}>
-                    开始分类
+                  <button type="button" className="ui-btn ui-btn-primary" onClick={() => void computeBatchPlan()}>
+                    生成分类方案
                   </button>
                 </div>
               </>
             )}
 
-            {batchAi.phase === "running" && (
+            {(batchAi.phase === "computing" || batchAi.phase === "applying") && (
               <>
                 <div className="ui-progress">
                   <div className="ui-progress-head">
@@ -1575,12 +1786,74 @@ function DocsView({ className = "", onChanged }: Props) {
                     <div className="ui-progress-fill" style={{ width: `${batchAi.percent}%` }} />
                   </div>
                   <div className="ui-progress-meta">
-                    文档 {batchAi.current}/{batchAi.total}
+                    {batchAi.phase === "computing"
+                      ? `分析文档 ${batchAi.current}/${batchAi.total}`
+                      : `执行目录 ${batchAi.current}/${batchAi.total}`}
                   </div>
                 </div>
                 <p className="ui-confirm-hint">
-                  正在逐篇分析并应用分类；仅更新目录元数据，不重建向量索引，请勿关闭页面。
+                  {batchAi.phase === "computing"
+                    ? "正在生成方案，尚未修改任何文档；仅更新目录元数据，不重建向量索引。"
+                    : "正在按确认后的方案执行，请勿关闭页面。"}
                 </p>
+              </>
+            )}
+
+            {batchAi.phase === "review" && (
+              <>
+                <div className="ui-plan-summary">
+                  共 {batchPlan.length} 篇：移动 {batchChanges.filter((item) => item.action === "move").length} 篇 ·
+                  新建目录 {batchNewFolders.length} 个 · 保持 {batchKept} 篇 · 低置信度 {batchLow} 篇
+                </div>
+                <h4 className="ui-plan-title">变更清单</h4>
+                {batchChanges.length === 0 ? (
+                  <p className="ui-empty-hint">所有文档均已在最优目录或置信度偏低，无需执行变更。</p>
+                ) : (
+                  <ul className="ui-plan-list">
+                    {batchChanges.map((item) => (
+                      <li key={item.docId}>
+                        <div className="ui-plan-doc-name">{item.filename}</div>
+                        <div className="ui-plan-change">
+                          <span>{item.from}</span>
+                          <span aria-hidden="true">→</span>
+                          <strong>{item.to}</strong>
+                          <span className="ui-plan-action" data-action={item.action}>
+                            {item.action === "new" ? "新建并移入" : "移动"}
+                          </span>
+                        </div>
+                        <div className="ui-plan-reason">{item.reason}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {batchNewFolders.length > 0 && (
+                  <p className="ui-plan-new">
+                    新建目录：{batchNewFolders.join("、")}
+                  </p>
+                )}
+                <h4 className="ui-plan-title">分类后目录树预览</h4>
+                <div className="ui-plan-tree-wrap">
+                  <PlanTree nodes={batchPreview} />
+                </div>
+                <p className="ui-confirm-hint">本次仅更新目录元数据，不重建向量索引。</p>
+                <div className="ui-modal-actions">
+                  <button type="button" className="ui-btn ui-btn-ghost" onClick={() => setBatchAi(null)}>
+                    取消
+                  </button>
+                  {batchChanges.length > 0 ? (
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-primary"
+                      onClick={() => void executeBatchPlan()}
+                    >
+                      确认执行
+                    </button>
+                  ) : (
+                    <button type="button" className="ui-btn ui-btn-primary" onClick={() => setBatchAi(null)}>
+                      关闭
+                    </button>
+                  )}
+                </div>
               </>
             )}
 
@@ -1592,6 +1865,8 @@ function DocsView({ className = "", onChanged }: Props) {
                 <div className="ui-batch-result">
                   <p>成功移动：<strong>{batchAi.result.moved}</strong> 篇</p>
                   <p>跳过：{batchAi.result.skipped} 篇（已在目标目录）</p>
+                  <p>新建目录：{batchAi.result.newFolders ?? 0} 个</p>
+                  <p>保持：{batchAi.result.kept ?? 0} 篇</p>
                   <p>低置信度未分类：{batchAi.result.low} 篇</p>
                   <p>失败：{batchAi.result.failed} 篇</p>
                 </div>

@@ -12,7 +12,13 @@ from uuid import uuid4
 from app.core.config import get_settings
 from app.core.exceptions import ParamError
 from app.indexing import store
-from app.indexing.folders import DEFAULT_FOLDER, FolderPathError, ancestors, normalize_folder
+from app.indexing.folders import (
+    DEFAULT_FOLDER,
+    FolderPathError,
+    ancestors,
+    normalize_folder,
+    validate_document_target,
+)
 from app.indexing.lock import write_guard
 from app.indexing.manifest import Manifest
 
@@ -50,6 +56,7 @@ def batch_move(settings, doc_ids: list[str], folder: str) -> dict:
         target = normalize_folder(folder)
     except FolderPathError as e:
         raise ParamError(str(e)) from e
+    target = validate_document_target(settings, target)
     if not doc_ids:
         raise ParamError("至少选择一篇文档")
 

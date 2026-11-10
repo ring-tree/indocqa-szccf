@@ -7,6 +7,7 @@ manifest 中同时记录 `folder`，检索按目录子树过滤。空目录由 m
 
 import re
 
+from app.core.exceptions import ParamError
 from app.indexing.manifest import Manifest
 
 DEFAULT_FOLDER = "未分类"
@@ -73,6 +74,59 @@ def descendants(folder: str, folders: list[str]) -> list[str]:
     if not folder:
         return []
     return sorted({folder, *(f for f in folders if is_within(f, folder))})
+
+
+def folder_has_children(path: str, folders: list[str]) -> bool:
+    return any(item.startswith(path + "/") for item in folders)
+
+
+def leaf_folders(folders: list[str]) -> list[str]:
+    """可存放文档的目录：没有子目录的末级目录。"""
+    return [path for path in folders if not folder_has_children(path, folders)]
+
+
+def _docs_by_folder(manifest: Manifest) -> set[str]:
+    return {
+        info.get("folder") or DEFAULT_FOLDER
+        for info in manifest.documents().values()
+        if info.get("folder")
+    }
+
+
+def validate_document_target(settings, path: str, *, allow_new: bool = True) -> str:
+    """文档目标目录规范：只能落在末级目录；新建目录时祖先不得已有文档。"""
+    target = normalize_folder(path, default=None)
+    if not target:
+        raise ParamError("目标目录不能为空")
+    manifest = Manifest(Manifest.path_for(settings))
+    folders = manifest.folders()
+    doc_folders = _docs_by_folder(manifest)
+    if target in folders:
+        if folder_has_children(target, folders):
+            raise ParamError(f"「{target}」包含子目录，只能选择最末级目录存放文档")
+        return target
+    if not allow_new:
+        raise ParamError(f"目录不存在: {target}")
+    for ancestor in ancestors(target)[:-1]:
+        if ancestor in folders and ancestor in doc_folders:
+            raise ParamError(f"「{ancestor}」下已有文档，不能再创建子目录")
+    return target
+
+
+def validate_folder_create(settings, path: str) -> str:
+    """新建目录规范：已有文档的目录不能再创建子目录。"""
+    target = normalize_folder(path, default=None)
+    if not target:
+        raise ParamError("目录路径不能为空")
+    manifest = Manifest(Manifest.path_for(settings))
+    folders = manifest.folders()
+    if target in folders:
+        return target
+    doc_folders = _docs_by_folder(manifest)
+    for ancestor in ancestors(target)[:-1]:
+        if ancestor in folders and ancestor in doc_folders:
+            raise ParamError(f"「{ancestor}」下已有文档，不能再创建子目录")
+    return target
 
 
 def scope_paths(settings, folder: str | None = None, folders: list[str] | None = None) -> list[str]:

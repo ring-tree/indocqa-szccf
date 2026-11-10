@@ -18,6 +18,7 @@ _TOC_LINE = re.compile(r"\.{4,}\s*\d+\s*$")
 def preview_document(path, settings=None, classify: bool = False) -> dict:
     settings = settings or get_settings()
     path = pathlib.Path(path)
+    display_name = re.sub(r"^preview_[0-9a-f]{8}_", "", path.name)
     doc = load_document(path)
     children, _parents = build_chunks(doc)
 
@@ -81,7 +82,7 @@ def preview_document(path, settings=None, classify: bool = False) -> dict:
 
     language = "zh" if cjk >= latin else "en"
     report = {
-        "filename": path.name,
+        "filename": display_name,
         "status": status,
         "pages": doc.pages,
         "paragraphs": len(doc.paragraphs),
@@ -95,11 +96,11 @@ def preview_document(path, settings=None, classify: bool = False) -> dict:
         "issues": issues,
     }
     if classify:
-        report["classification"] = _classify_preview(settings, doc)
+        report["classification"] = _classify_preview(settings, doc, display_name)
     return report
 
 
-def _classify_preview(settings, doc) -> dict:
+def _classify_preview(settings, doc, filename: str) -> dict:
     """预检后可选执行 AI 分类；未配置模型时返回不可用标记而非报错。"""
     import asyncio
 
@@ -109,9 +110,7 @@ def _classify_preview(settings, doc) -> dict:
         return {"available": False, "reason": "no_model"}
     text = "\n".join(p.text for p in doc.paragraphs)[:2000]
     try:
-        return asyncio.run(
-            classify_service.classify_text(settings, doc.filename, text, use_llm=False)
-        )
+        return asyncio.run(classify_service.classify_text(settings, filename, text, use_llm=False))
     except Exception as e:  # noqa: BLE001 分类失败不应影响预检结果
         return {
             "available": True,

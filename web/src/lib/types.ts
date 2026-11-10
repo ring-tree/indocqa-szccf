@@ -92,6 +92,13 @@ export interface ClassificationCandidate {
 export interface ClassificationResult {
   available: boolean;
   candidates?: ClassificationCandidate[];
+  suggested_new_folder?: {
+    path: string;
+    name: string;
+    reason: string;
+    confidence: number;
+    isNew?: boolean;
+  } | null;
   fallback?: boolean;
   reason?: string;
   latencyMs?: number;

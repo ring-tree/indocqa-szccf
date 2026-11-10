@@ -9,7 +9,7 @@ import time
 
 from app.core.config import get_settings
 from app.indexing import store
-from app.indexing.folders import ancestors, normalize_folder
+from app.indexing.folders import ancestors, normalize_folder, validate_document_target
 from app.indexing.lock import write_guard
 from app.indexing.manifest import Manifest
 from app.parsing.chunker import build_chunks
@@ -30,7 +30,7 @@ def ingest_file(
     settings = settings or get_settings()
     started = time.perf_counter()
     content_hash = _hash_of(path)
-    target_folder = normalize_folder(folder)
+    target_folder = validate_document_target(settings, normalize_folder(folder))
     manifest = Manifest(Manifest.path_for(settings))
     with write_guard(settings):
         # 后端一致性先于去重：换后端后旧 manifest 不应让入库被“内容已存在”静默跳过

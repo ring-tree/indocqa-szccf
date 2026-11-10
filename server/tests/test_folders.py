@@ -81,11 +81,11 @@ def test_move_and_rename_folder(tmp_settings, tmp_path):
     result = ingest_file(doc, tmp_settings, folder="设备手册/螺杆空压机")
     doc_id = result["docId"]
 
-    asyncio.run(move_document(doc_id, DocumentMove(folder="行业标准")))
+    asyncio.run(move_document(doc_id, DocumentMove(folder="行业标准/能源")))
     manifest = Manifest(Manifest.path_for(tmp_settings))
-    assert manifest.get(doc_id)["folder"] == "行业标准"
+    assert manifest.get(doc_id)["folder"] == "行业标准/能源"
 
-    body = FolderRename(**{"from": "行业标准", "to": "标准规范/行业"})
+    body = FolderRename(**{"from": "行业标准/能源", "to": "标准规范/行业"})
     asyncio.run(rename_folder(body))
     manifest = Manifest(Manifest.path_for(tmp_settings))
     assert manifest.get(doc_id)["folder"] == "标准规范/行业"
@@ -100,10 +100,10 @@ def test_delete_folder_move_mode(tmp_settings, tmp_path):
     from app.api.kb import delete_folder
 
     doc = _md(tmp_path / "a.md", "维护", "LUB 更换周期 4000 小时。")
-    result = ingest_file(doc, tmp_settings, folder="设备手册/螺杆")
-    asyncio.run(delete_folder("设备手册/螺杆", mode="move"))
+    result = ingest_file(doc, tmp_settings, folder="临时目录/子目录")
+    asyncio.run(delete_folder("临时目录/子目录", mode="move"))
     manifest = Manifest(Manifest.path_for(tmp_settings))
-    assert manifest.get(result["docId"])["folder"] == "设备手册"
+    assert manifest.get(result["docId"])["folder"] == "临时目录"
 
 
 def test_migration_is_idempotent(tmp_settings):

@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import type { Session } from "../lib/types";
 
 interface Props {
@@ -10,6 +10,7 @@ interface Props {
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
+  onDeleteMany: (ids: string[]) => void;
   onClose?: () => void;
   kb?: { documents: number; chunks: number } | null;
 }
@@ -23,9 +24,45 @@ function Sidebar({
   onSelect,
   onNew,
   onDelete,
+  onDeleteMany,
   onClose,
   kb,
 }: Props) {
+  const [managing, setManaging] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setSelected((current) => {
+      const next = new Set([...current].filter((id) => sessions.some((s) => s.id === id)));
+      return next.size === current.size ? current : next;
+    });
+    if (sessions.length === 0) setManaging(false);
+  }, [sessions]);
+
+  const toggleSelected = (id: string) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelected((current) =>
+      current.size === sessions.length ? new Set() : new Set(sessions.map((s) => s.id)),
+    );
+  };
+
+  const deleteSelected = () => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!window.confirm(`删除选中的 ${ids.length} 个会话？该操作不可撤销。`)) return;
+    onDeleteMany(ids);
+    setSelected(new Set());
+    setManaging(false);
+  };
+
   return (
     <aside
       aria-label="会话与导航"
@@ -80,7 +117,37 @@ function Sidebar({
       </nav>
 
       <div className="mt-5 flex min-h-0 flex-1 flex-col">
-        <div className="ui-sidebar-section px-4 pb-2">最近会话</div>
+        <div className="ui-sidebar-section flex items-center justify-between gap-2 px-4 pb-2">
+          <span>最近会话</span>
+          {sessions.length > 0 && (
+            <button
+              type="button"
+              className="ui-session-manage"
+              onClick={() => {
+                setManaging((value) => !value);
+                setSelected(new Set());
+              }}
+            >
+              {managing ? "完成" : "管理"}
+            </button>
+          )}
+        </div>
+        {managing && sessions.length > 0 && (
+          <div className="ui-session-batch">
+            <span>已选 {selected.size} 项</span>
+            <button type="button" onClick={toggleAll}>
+              {selected.size === sessions.length ? "取消全选" : "全选"}
+            </button>
+            <button
+              type="button"
+              disabled={selected.size === 0}
+              onClick={deleteSelected}
+              className="ui-session-batch-delete"
+            >
+              删除
+            </button>
+          </div>
+        )}
         <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
           {sessions.length === 0 && (
             <li className="ui-sidebar-subtitle px-3 py-7 text-center">
@@ -89,18 +156,40 @@ function Sidebar({
           )}
           {sessions.map((s) => {
             const active = s.id === activeId;
+            const checked = selected.has(s.id);
             return (
-              <li key={s.id} className={`group ui-session-item ${active ? "is-active" : ""}`}>
+              <li
+                key={s.id}
+                className={`group ui-session-item ${active ? "is-active" : ""} ${
+                  managing ? "is-managing" : ""
+                }`}
+              >
+                {managing && (
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={checked}
+                    aria-label={`选择会话 ${s.title}`}
+                    className="ui-session-check"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSelected(s.id);
+                    }}
+                  >
+                    <span className={`ui-session-checkbox ${checked ? "is-checked" : ""}`} />
+                  </button>
+                )}
                 <div
                   role="button"
                   tabIndex={0}
                   aria-current={active ? "true" : undefined}
-                  aria-label={`打开会话 ${s.title}`}
-                  onClick={() => onSelect(s.id)}
+                  aria-label={managing ? `选择会话 ${s.title}` : `打开会话 ${s.title}`}
+                  onClick={() => (managing ? toggleSelected(s.id) : onSelect(s.id))}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      onSelect(s.id);
+                      if (managing) toggleSelected(s.id);
+                      else onSelect(s.id);
                     }
                   }}
                   className="min-w-0 flex-1 cursor-pointer rounded-md px-2 py-2 text-left"
@@ -110,18 +199,20 @@ function Sidebar({
                     {s.lastMessage || `${s.messageCount ?? 0} 条消息`}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (window.confirm(`删除会话「${s.title}」？`)) onDelete(s.id);
-                  }}
-                  className="ui-session-delete md:opacity-60 md:group-hover:opacity-100"
-                  aria-label={`删除会话 ${s.title}`}
-                  title="删除会话"
-                >
-                  ×
-                </button>
+                {!managing && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`删除会话「${s.title}」？`)) onDelete(s.id);
+                    }}
+                    className="ui-session-delete md:opacity-60 md:group-hover:opacity-100"
+                    aria-label={`删除会话 ${s.title}`}
+                    title="删除会话"
+                  >
+                    ×
+                  </button>
+                )}
               </li>
             );
           })}

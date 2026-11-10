@@ -15,7 +15,12 @@ from app.core.config import get_settings
 from app.core.exceptions import AIUnavailableError, DocumentNotFoundError
 from app.core.llm import LLMGateway
 from app.indexing import store
-from app.indexing.folders import DEFAULT_FOLDER
+from app.indexing.folders import (
+    DEFAULT_FOLDER,
+    folder_has_children,
+    leaf_folders,
+    normalize_folder,
+)
 from app.indexing.manifest import Manifest
 
 MAX_SUMMARY = 800
@@ -119,9 +124,11 @@ def _build_candidates(
     semantic: dict[str, float],
     evidence: dict[str, list[str]],
 ) -> list[dict]:
-    rule_folder, rule_reason = _rule_match(filename, folders)
+    # 文档只能落到末级目录；父级目录只作为分类组织节点
+    targets = leaf_folders(folders)
+    rule_folder, rule_reason = _rule_match(filename, targets)
     candidates = []
-    for path in folders:
+    for path in targets:
         if path == DEFAULT_FOLDER:
             continue
         sem = semantic.get(path, 0.0)
@@ -153,6 +160,59 @@ def _build_candidates(
         )
     candidates.sort(key=lambda item: item["confidence"], reverse=True)
     return candidates
+
+
+def _clean_title(filename: str) -> str:
+    stem = (filename or "").rsplit("/", 1)[-1]
+    if "." in stem:
+        stem = stem.rsplit(".", 1)[0]
+    stem = re.sub(r"^(?:preview|[0-9a-f]{8})_[0-9a-f]{8}_", "", stem)
+    stem = re.sub(r"^[0-9a-f]{8}_", "", stem)
+    stem = re.sub(r"[（(]\s*厂商公开\s*[)）]", "", stem)
+    stem = re.sub(r"(操作手册|使用说明书|使用手册|说明书|技术资料|技术文档|手册)$", "", stem)
+    stem = stem.replace("_", " ").strip()
+    stem = re.sub(r"[\\/:*?\"<>|]", " ", stem)
+    stem = " ".join(stem.split())[:30].strip()
+    return stem or "新建目录"
+
+
+def _propose_new_folder(manifest: Manifest, filename: str, candidates: list[dict]) -> dict | None:
+    """所有候选置信度偏低时，给出新建目录建议（父级分类/文档主题）。"""
+    if candidates and candidates[0]["confidence"] >= MID:
+        return None
+    folders = manifest.folders()
+    doc_folders = {info.get("folder") or DEFAULT_FOLDER for info in manifest.documents().values()}
+    best_path = candidates[0]["path"] if candidates else ""
+    best_conf = candidates[0]["confidence"] if candidates else 0.0
+    top_level = best_path.split("/")[0] if best_path else ""
+    # 弱相关时不再强行挂到某个一级分类下，直接建议新的顶层目录，避免误归档
+    parent = (
+        top_level
+        if best_conf >= 0.45 and top_level and top_level in folders and top_level not in doc_folders
+        else ""
+    )
+    title = _clean_title(filename)
+    raw = f"{parent}/{title}" if parent else title
+    try:
+        path = normalize_folder(raw)
+    except Exception:  # noqa: BLE001 标题异常时退化为顶层新目录
+        path = title
+    if len(path.split("/")) > 6:
+        path = title
+    base = path
+    for index in range(2, 10):
+        if path not in folders:
+            break
+        if not folder_has_children(path, folders) and path not in doc_folders:
+            break
+        path = f"{base}-{index}"
+    return {
+        "path": path,
+        "name": title,
+        "reason": "现有目录匹配度低，建议新建目录",
+        "confidence": 0.5,
+        "isNew": path not in folders,
+    }
 
 
 async def _llm_rerank(
@@ -230,33 +290,38 @@ async def classify_text(
     manifest = Manifest(Manifest.path_for(settings))
     folders = manifest.folders()
     if not folders:
+        proposal = _propose_new_folder(manifest, filename, [])
         return {
             "available": True,
             "candidates": [],
+            "suggested_new_folder": proposal,
             "fallback": False,
             "reason": "no_folders",
             "latencyMs": int((time.perf_counter() - started) * 1000),
         }
+    targets = leaf_folders(folders)
     summary = f"{filename}\n{text[:MAX_SUMMARY]}"
     try:
         vector = store.query_embedding(settings, summary)
     except Exception:  # noqa: BLE001 嵌入不可用时只走规则
         vector = None
     semantic, evidence = _semantic_scores(settings, vector, exclude_doc_id)
-    candidates = _build_candidates(folders, filename, text, semantic, evidence)
+    candidates = _build_candidates(targets, filename, text, semantic, evidence)
     fallback = vector is None
     if use_llm and candidates:
         top = candidates[0]["confidence"]
         margin = top - candidates[1]["confidence"] if len(candidates) > 1 else 1.0
         if top < 0.72 or margin < 0.08:
             candidates, fallback = await _llm_rerank(
-                settings, gateway, filename, summary, candidates, folders
+                settings, gateway, filename, summary, candidates, targets
             )
     for item in candidates:
         item["level"] = _level(item["confidence"])
+    proposal = _propose_new_folder(manifest, filename, candidates)
     return {
         "available": True,
         "candidates": candidates[:3],
+        "suggested_new_folder": proposal,
         "fallback": fallback,
         "reason": "",
         "latencyMs": int((time.perf_counter() - started) * 1000),
@@ -279,13 +344,16 @@ async def classify_document(settings, doc_id: str, profile: str | None = None) -
     started = time.perf_counter()
     folders = manifest.folders()
     if not folders:
+        proposal = _propose_new_folder(manifest, filename, [])
         return {
             "available": True,
             "candidates": [],
+            "suggested_new_folder": proposal,
             "fallback": False,
             "reason": "no_folders",
             "latencyMs": int((time.perf_counter() - started) * 1000),
         }
+    targets = leaf_folders(folders)
     vector = profile_data.get("vector")
     if not vector:
         try:
@@ -293,20 +361,22 @@ async def classify_document(settings, doc_id: str, profile: str | None = None) -
         except Exception:  # noqa: BLE001
             vector = None
     semantic, evidence = _semantic_scores(settings, vector, doc_id)
-    candidates = _build_candidates(folders, filename, text, semantic, evidence)
+    candidates = _build_candidates(targets, filename, text, semantic, evidence)
     fallback = vector is None
     if candidates:
         top = candidates[0]["confidence"]
         margin = top - candidates[1]["confidence"] if len(candidates) > 1 else 1.0
         if top < 0.72 or margin < 0.08:
             candidates, fallback = await _llm_rerank(
-                settings, gateway, filename, text[:MAX_SUMMARY], candidates, folders
+                settings, gateway, filename, text[:MAX_SUMMARY], candidates, targets
             )
     for item in candidates:
         item["level"] = _level(item["confidence"])
+    proposal = _propose_new_folder(manifest, filename, candidates)
     return {
         "available": True,
         "candidates": candidates[:3],
+        "suggested_new_folder": proposal,
         "fallback": fallback,
         "reason": "",
         "latencyMs": int((time.perf_counter() - started) * 1000),

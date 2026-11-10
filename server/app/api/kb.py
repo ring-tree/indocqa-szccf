@@ -23,9 +23,11 @@ from app.indexing.folders import (
     FolderPathError,
     ancestors,
     folder_counts,
+    folder_has_children,
     is_within,
     normalize_folder,
     parent_of,
+    validate_folder_create,
 )
 from app.indexing.ingest import ALLOWED_EXTS, ingest_file
 from app.indexing.jobs import create_job, get_job, run_ingest_job
@@ -222,6 +224,7 @@ async def create_folder(body: FolderCreate) -> dict:
     path = _folder_or_400(body.path, default=None)
     if not path:
         raise ParamError("目录路径不能为空")
+    path = validate_folder_create(settings, path)
     with write_guard(settings):
         manifest = _manifest(settings)
         for item in ancestors(path):
@@ -241,11 +244,30 @@ async def rename_folder(body: FolderRename) -> dict:
         return {"data": _folder_item(_manifest(settings), source)}
     if is_within(target, source):
         raise ParamError("不能把目录移动到自身的子目录下")
+    target = validate_folder_create(settings, target)
     with write_guard(settings):
         manifest = _manifest(settings)
+        folders = manifest.folders()
         docs = manifest.docs_in_folder(source)
-        if not docs and source not in manifest.folders():
+        if not docs and source not in folders:
             raise DocumentNotFoundError(f"目录不存在: {source}")
+        if docs and target in folders and folder_has_children(target, folders):
+            raise ParamError(f"「{target}」包含子目录，不能再放入文档")
+        source_has_children = any(item.startswith(source + "/") for item in folders)
+        target_has_docs = any(
+            (info.get("folder") or DEFAULT_FOLDER) == target
+            for info in manifest.documents().values()
+        )
+        if source_has_children and target_has_docs:
+            raise ParamError(f"「{target}」下已有文档，不能再创建子目录")
+        parent = parent_of(target)
+        if parent:
+            parent_has_docs = any(
+                (info.get("folder") or DEFAULT_FOLDER) == parent
+                for info in manifest.documents().values()
+            )
+            if parent_has_docs:
+                raise ParamError(f"「{parent}」下已有文档，不能再创建子目录")
         for doc_id in docs:
             info = manifest.get(doc_id) or {}
             old = info.get("folder") or source
@@ -284,6 +306,15 @@ async def delete_folder(path: str, mode: str = "move") -> dict:
         moved_or_deleted = 0
         if mode == "move":
             destination = parent_of(folder) or DEFAULT_FOLDER
+            if docs:
+                folders = manifest.folders()
+                other_children = [
+                    item
+                    for item in folders
+                    if item.startswith(destination + "/") and not is_within(item, folder)
+                ]
+                if other_children:
+                    raise ParamError("父目录仍包含其他子目录，请先把文档移动到末级目录后再删除")
             for doc_id in docs:
                 store.update_doc_folder(settings, doc_id, destination)
                 manifest.set_doc_folder(doc_id, destination)

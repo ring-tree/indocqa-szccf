@@ -123,6 +123,17 @@ export default function App() {
     [deleteActive],
   );
 
+  const handleDeleteMany = useCallback(
+    (ids: string[]) => {
+      void (async () => {
+        await Promise.all(ids.map((id) => deleteSession(id).catch(() => undefined)));
+        if (activeId && ids.includes(activeId)) setActiveId(null);
+        await refreshSessions();
+      })();
+    },
+    [activeId, refreshSessions],
+  );
+
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const toggleTheme = useCallback(
     () => setTheme((current) => (current === "light" ? "dark" : "light")),
@@ -233,6 +244,7 @@ export default function App() {
           onSelect={selectSession}
           onNew={newChat}
           onDelete={handleDelete}
+          onDeleteMany={handleDeleteMany}
           onClose={closeSidebar}
           kb={kb}
         />

@@ -32,6 +32,10 @@ function Message({ message, anchor, onRetry }: Props) {
 
   const jumpToSource = useCallback(
     (index: number) => {
+      if (activeSource === index) {
+        setActiveSource(null);
+        return;
+      }
       setActiveSource(index);
       const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
       document.getElementById(`${anchor}-source-${index}`)?.scrollIntoView({
@@ -39,7 +43,7 @@ function Message({ message, anchor, onRetry }: Props) {
         block: "center",
       });
     },
-    [anchor],
+    [activeSource, anchor],
   );
 
   if (message.role === "user") {

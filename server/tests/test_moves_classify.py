@@ -54,12 +54,12 @@ def _two_docs(settings, tmp_path):
 
 def test_batch_move_and_undo(tmp_settings, tmp_path):
     first, second = _two_docs(tmp_settings, tmp_path)
-    result = batch_move(tmp_settings, [first, second], "行业标准")
+    result = batch_move(tmp_settings, [first, second], "行业标准/压缩空气系统")
     assert sorted(result["moved"]) == sorted([first, second])
     assert result["operationId"]
     manifest = Manifest(Manifest.path_for(tmp_settings))
-    assert manifest.get(first)["folder"] == "行业标准"
-    assert manifest.get(second)["folder"] == "行业标准"
+    assert manifest.get(first)["folder"] == "行业标准/压缩空气系统"
+    assert manifest.get(second)["folder"] == "行业标准/压缩空气系统"
 
     undo = undo_move(tmp_settings, result["operationId"])
     assert sorted(undo["restored"]) == sorted([first, second])
