@@ -244,6 +244,22 @@ def folders_of(settings, chunk_ids: list[str]) -> dict[str, str]:
     }
 
 
+def vectors_for(settings, chunk_ids: list[str]) -> dict[str, list[float]]:
+    """按 chunk_id 批量读取已存向量，供上下文去重复用，避免重复推理。"""
+    ids = list(dict.fromkeys(cid for cid in chunk_ids if cid))
+    if not ids:
+        return {}
+    res = _collection(settings).get(ids=ids, include=["embeddings"])
+    embeddings = res.get("embeddings")
+    if embeddings is None:
+        return {}
+    return {
+        cid: [float(value) for value in vector]
+        for cid, vector in zip(res["ids"], embeddings)
+        if vector is not None
+    }
+
+
 def doc_profile(settings, doc_id: str, max_chunks: int = 5) -> dict:
     """取文档摘要文本与平均向量，供 AI 分类使用。"""
     res = _collection(settings).get(

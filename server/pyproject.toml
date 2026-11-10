@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.4"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "pytest-cov>=5", "ruff>=0.4"]
 # 重排默认关闭；只有显式启用 INDOCQA_USE_RERANK 才需要这组依赖
 rerank = ["sentence-transformers>=2.7"]
 

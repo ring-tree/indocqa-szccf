@@ -235,6 +235,7 @@ async def run_retrieval(
     hits = [h for h in final.get("hits", []) if isinstance(h, Hit)]
     return {
         "intent": final.get("intent", "general"),
+        "entities": final.get("entities", []),
         "plan": final.get("plan", {}),
         "query": final.get("query", question),
         "hits": hits,

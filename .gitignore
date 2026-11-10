@@ -5,6 +5,8 @@ __pycache__/
 venv/
 .pytest_cache/
 *.egg-info/
+.coverage
+.coverage.*
 
 # 环境变量与密钥（禁止提交真实 Key）
 .env

@@ -72,6 +72,28 @@ class Settings(BaseSettings):
     # 消融实验开关：关闭后 adaptive 模式不再做查询侧术语扩展（索引侧打标保留，属部分消融）
     term_expansion_enabled: bool = True
 
+    # 上下文组装：on=生效；shadow=只统计不生效；off=回退旧拼接
+    context_enabled: bool = True
+    context_mode: str = "on"
+    context_window_tokens: int = 32768
+    context_output_reserve: int = 1500
+    context_safety_ratio: float = 0.90
+    context_estimate_margin: float = 1.08
+    context_quota_evidence: float = 0.60
+    context_quota_history: float = 0.18
+    context_quota_task: float = 0.14
+    context_quota_persona: float = 0.08
+    context_dedup_semantic: float = 0.92
+    context_dedup_semantic_enabled: bool = True
+    context_dedup_hamming: int = 3
+    context_dedup_jaccard: float = 0.82
+    context_noise_score_ratio: float = 0.35
+    context_weights: str = ""
+    context_template_id: str = "kb-answer"
+    context_template_version: str = "1"
+    context_trace_persist: bool = True
+    context_persona_enabled: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -62,25 +62,34 @@ async def stream_answer(
     gateway: LLMGateway | None,
     history: list[dict] | None = None,
     intent: str | None = None,
+    bundle=None,
+    extra_instruction: str | None = None,
 ) -> AsyncIterator[str]:
     if gateway and gateway.configured:
-        system = SYSTEM_PROMPT + (_STEP_RULE if intent in {"procedure", "fault"} else "")
-        messages = [
-            {"role": "system", "content": system},
-            *(history or []),
-            {
-                "role": "user",
-                "content": f"【资料】\n{build_context(hits)}\n\n【问题】\n{question}",
-            },
-        ]
+        if bundle is not None:
+            messages = [dict(message) for message in bundle.messages]
+            if extra_instruction:
+                messages[-1]["content"] = f"{messages[-1]['content']}\n\n{extra_instruction}"
+        else:
+            system = SYSTEM_PROMPT + (_STEP_RULE if intent in {"procedure", "fault"} else "")
+            messages = [
+                {"role": "system", "content": system},
+                *(history or []),
+                {
+                    "role": "user",
+                    "content": f"【资料】\n{build_context(hits)}\n\n【问题】\n{question}",
+                },
+            ]
         async for delta in gateway.stream(messages):
             yield delta
         return
 
     # 降级路径：原文摘录（离线开发/测试用，前端可正常走通全链路）
     # 表格块信息密度高且行内即答案，不截断；文本块取前 200 字符
+    evidence = [unit.meta.get("hit") for unit in bundle.evidence] if bundle else hits
+    evidence = [hit for hit in evidence if hit is not None]
     lines = ["（未配置生成模型，以下为检索原文摘录）"]
-    for i, h in enumerate(hits[:3], start=1):
+    for i, h in enumerate(evidence[:3], start=1):
         limit = 800 if h.kind == "table" else 200
         excerpt = h.text[:limit].replace("\n", " ")
         lines.append(f"{excerpt}… [{i}]")

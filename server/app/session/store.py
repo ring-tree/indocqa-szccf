@@ -15,6 +15,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL DEFAULT '',
+    task_state TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS messages (
     confidence_reason TEXT,
     boundary TEXT,
     model TEXT,
+    context_manifest TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
@@ -53,10 +55,15 @@ def _connect(path: str):
         con.execute("PRAGMA journal_mode=WAL")
         con.execute("PRAGMA foreign_keys=ON")
         con.executescript(_SCHEMA)
-        # 轻量迁移：旧库没有 model 列时补上，避免升级后丢字段
-        columns = {row[1] for row in con.execute("PRAGMA table_info(messages)")}
-        if "model" not in columns:
+        # 轻量迁移：旧库缺列时补齐，避免升级后丢字段
+        message_columns = {row[1] for row in con.execute("PRAGMA table_info(messages)")}
+        if "model" not in message_columns:
             con.execute("ALTER TABLE messages ADD COLUMN model TEXT")
+        if "context_manifest" not in message_columns:
+            con.execute("ALTER TABLE messages ADD COLUMN context_manifest TEXT")
+        session_columns = {row[1] for row in con.execute("PRAGMA table_info(sessions)")}
+        if "task_state" not in session_columns:
+            con.execute("ALTER TABLE sessions ADD COLUMN task_state TEXT")
         yield con
         con.commit()
     finally:
@@ -64,15 +71,28 @@ def _connect(path: str):
 
 
 def _session_row(row: sqlite3.Row) -> dict:
+    task_state = None
+    if row["task_state"]:
+        try:
+            task_state = json.loads(row["task_state"])
+        except (TypeError, ValueError):
+            task_state = None
     return {
         "id": row["id"],
         "title": row["title"],
+        "taskState": task_state,
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
     }
 
 
 def _message_row(row: sqlite3.Row) -> dict:
+    manifest = None
+    if row["context_manifest"]:
+        try:
+            manifest = json.loads(row["context_manifest"])
+        except (TypeError, ValueError):
+            manifest = None
     return {
         "id": row["id"],
         "role": row["role"],
@@ -83,6 +103,7 @@ def _message_row(row: sqlite3.Row) -> dict:
         "confidenceReason": row["confidence_reason"],
         "boundary": row["boundary"],
         "model": row["model"],
+        "contextManifest": manifest,
         "createdAt": row["created_at"],
     }
 
@@ -162,14 +183,16 @@ def append_message(
     confidence_reason: str = "",
     boundary: str | None = None,
     model: str | None = None,
+    context_manifest: dict | None = None,
 ) -> int:
     now = _now()
     with _connect(path) as con:
         cur = con.execute(
             """
             INSERT INTO messages(session_id, role, content, sources, trace,
-                                 confidence, confidence_reason, boundary, model, created_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?)
+                                 confidence, confidence_reason, boundary, model,
+                                 context_manifest, created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 session_id,
@@ -181,6 +204,7 @@ def append_message(
                 confidence_reason,
                 boundary,
                 model,
+                json.dumps(context_manifest, ensure_ascii=False) if context_manifest else None,
                 now,
             ),
         )
@@ -211,6 +235,25 @@ def get_messages(path: str, session_id: str, limit: int | None = None) -> list[d
                 "SELECT * FROM messages WHERE session_id=? ORDER BY id", (session_id,)
             ).fetchall()
     return [_message_row(r) for r in rows]
+
+
+def get_task_state(path: str, session_id: str) -> dict | None:
+    with _connect(path) as con:
+        row = con.execute("SELECT task_state FROM sessions WHERE id=?", (session_id,)).fetchone()
+    if not row or not row["task_state"]:
+        return None
+    try:
+        return json.loads(row["task_state"])
+    except (TypeError, ValueError):
+        return None
+
+
+def save_task_state(path: str, session_id: str, state: dict) -> None:
+    with _connect(path) as con:
+        con.execute(
+            "UPDATE sessions SET task_state=? WHERE id=?",
+            (json.dumps(state, ensure_ascii=False), session_id),
+        )
 
 
 def cleanup(path: str, ttl_days: int) -> int:

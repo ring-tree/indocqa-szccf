@@ -7,6 +7,10 @@ import asyncio
 import re
 from collections.abc import AsyncIterator
 
+from app.context import AssemblyRequest, ContextAssembler
+from app.context.errors import ContextError
+from app.context.persona import extract_persona_signals, load_persona, upsert_persona
+from app.context.schema import ContextBundle, TaskState
 from app.core.config import get_settings
 from app.core.exceptions import UpstreamError
 from app.core.llm import LLMGateway
@@ -81,11 +85,50 @@ def _done(
     return data
 
 
-def _history(session_id: str, settings) -> list[dict]:
-    rows = session_store.get_messages(
+def _history_rows(session_id: str, settings) -> list[dict]:
+    return session_store.get_messages(
         settings.session_db, session_id, limit=settings.session_history_turns * 2
     )
+
+
+def _history(rows: list[dict]) -> list[dict]:
     return [{"role": row["role"], "content": row["content"]} for row in rows]
+
+
+def _task_state(settings, session_id: str) -> TaskState:
+    return TaskState.from_dict(
+        session_id, session_store.get_task_state(settings.session_db, session_id)
+    )
+
+
+def _assemble(
+    message: str,
+    retrieval: dict,
+    rows: list[dict],
+    settings,
+    session_id: str,
+    model: str | None,
+    folders: list[str] | None,
+) -> ContextBundle:
+    upsert_persona(settings, session_id, extract_persona_signals(message))
+    persona = load_persona(settings, session_id)
+    task = _task_state(settings, session_id)
+    request = AssemblyRequest(
+        session_id=session_id,
+        question=message,
+        intent=retrieval["intent"],
+        hits=retrieval["hits"],
+        history=rows,
+        mode="kb",
+        folders=list(folders or []),
+        model=model,
+        entities=list(retrieval.get("entities") or []),
+        task_state=task,
+        persona=persona,
+        template_id=settings.context_template_id,
+        template_version=settings.context_template_version,
+    )
+    return ContextAssembler(settings).assemble(request)
 
 
 def _context_query(message: str, history: list[dict]) -> str:
@@ -145,7 +188,8 @@ async def chat_stream(
 
     session = session_store.ensure_session(settings.session_db, session_id, message)
     sid = session["id"]
-    history = _history(sid, settings)
+    rows = _history_rows(sid, settings)
+    history = _history(rows)
     session_store.append_message(settings.session_db, sid, "user", message)
     retrieval_query = _context_query(message, history)
 
@@ -209,12 +253,9 @@ async def chat_stream(
         return
 
     weak = _weak_hits(hits, settings)
-    yield {
-        "event": "sources",
-        "data": {"items": [] if weak else [_source_item(h, i) for i, h in enumerate(hits, 1)]},
-    }
 
     if not hits or weak:
+        yield {"event": "sources", "data": {"items": []}}
         reason = "检索相似度不足，按库外问题处理" if weak else "无有效命中，按库外问题处理"
         retrieval["trace"] = retrieval["trace"] + [{"stage": "boundary", "result": reason}]
         yield {"event": "trace", "data": retrieval["trace"][-1]}
@@ -224,11 +265,70 @@ async def chat_stream(
             yield ev
         return
 
+    bundle = None
+    answer_hits = hits
+    context_on = settings.context_enabled and settings.context_mode in {"on", "shadow"}
+    if context_on:
+        try:
+            bundle = _assemble(
+                message,
+                retrieval,
+                rows,
+                settings,
+                sid,
+                settings.llm_model or None,
+                folders,
+            )
+            yield {
+                "event": "context",
+                "data": {
+                    **bundle.stats.to_dict(),
+                    "template": f"{bundle.template_id}@{bundle.template_version}",
+                    "warnings": bundle.warnings,
+                    "shadow": settings.context_mode == "shadow",
+                },
+            }
+            if bundle.task_state is not None:
+                session_store.save_task_state(settings.session_db, sid, bundle.task_state.to_dict())
+            if settings.context_mode == "on":
+                answer_hits = bundle.evidence_hits
+                if not answer_hits:
+                    yield {"event": "sources", "data": {"items": []}}
+                    reason = "上下文组装后无有效资料，按库外问题处理"
+                    retrieval["trace"] = retrieval["trace"] + [
+                        {"stage": "boundary", "result": reason}
+                    ]
+                    yield {"event": "trace", "data": retrieval["trace"][-1]}
+                    async for ev in _boundary_reply(
+                        message, gateway, settings, sid, retrieval["trace"], scope, history, hits
+                    ):
+                        yield ev
+                    return
+        except ContextError as e:
+            bundle = None
+            answer_hits = hits
+            yield {
+                "event": "trace",
+                "data": {"stage": "context", "result": f"组装降级：{e.code}"},
+            }
+
+    yield {
+        "event": "sources",
+        "data": {"items": [_source_item(h, i) for i, h in enumerate(answer_hits, 1)]},
+    }
+
     answer_parts: list[str] = []
     prefix = ""
     started = False
     try:
-        async for delta in stream_answer(message, hits, gateway, history, retrieval["intent"]):
+        async for delta in stream_answer(
+            message,
+            answer_hits,
+            gateway,
+            history,
+            retrieval["intent"],
+            bundle=bundle if settings.context_mode == "on" else None,
+        ):
             if not started:
                 prefix += delta
                 if _refusal_head(prefix):
@@ -239,7 +339,14 @@ async def chat_stream(
                         "data": {"stage": "boundary", "result": "资料未覆盖，转通用知识回答"},
                     }
                     async for ev in _boundary_reply(
-                        message, gateway, settings, sid, retrieval["trace"], scope, history, hits
+                        message,
+                        gateway,
+                        settings,
+                        sid,
+                        retrieval["trace"],
+                        scope,
+                        history,
+                        answer_hits,
                     ):
                         yield ev
                     return
@@ -259,21 +366,26 @@ async def chat_stream(
         yield {"event": "token", "data": {"delta": prefix}}
 
     answer = "".join(answer_parts)
-    _cov, has_valid_citation = _citation_coverage(answer, hits)
-    if hits and not has_valid_citation:
+    _cov, has_valid_citation = _citation_coverage(answer, answer_hits)
+    if answer_hits and not has_valid_citation:
         # 引用补正：回答缺少有效引用时带强指令重生成一次（可从 trace 观察）
         yield {
             "event": "trace",
             "data": {"stage": "citation_retry", "result": "回答缺少有效引用，重生成补正"},
         }
         answer_parts = []
-        retry_question = (
-            f"{message}\n（必须做到：每个事实句末标注引用编号，如 [1] [2]，编号对应资料标号）"
-        )
         try:
             yield {"event": "token", "data": {"delta": "\n——引用补正——\n"}}
             async for delta in stream_answer(
-                retry_question, hits, gateway, history, retrieval["intent"]
+                message,
+                answer_hits,
+                gateway,
+                history,
+                retrieval["intent"],
+                bundle=bundle if settings.context_mode == "on" else None,
+                extra_instruction=(
+                    "（必须做到：每个事实句末标注引用编号，如 [1] [2]，编号对应资料标号）"
+                ),
             ):
                 answer_parts.append(delta)
                 yield {"event": "token", "data": {"delta": delta}}
@@ -283,17 +395,24 @@ async def chat_stream(
             answer = "".join(answer_parts)
 
     answer_model = gateway.last_model  # 自评会再次调用网关，先记住回答实际使用的模型
-    level, reason = await _confidence(message, answer, hits, gateway, settings)
+    level, reason = await _confidence(message, answer, answer_hits, gateway, settings)
     mid = session_store.append_message(
         settings.session_db,
         sid,
         "assistant",
         answer,
-        sources=[_source_item(h, i) for i, h in enumerate(hits, 1)],
+        sources=[_source_item(h, i) for i, h in enumerate(answer_hits, 1)],
         trace=retrieval["trace"],
         confidence=level,
         confidence_reason=reason,
         model=answer_model,
+        context_manifest=(
+            bundle.manifest.to_dict()
+            if bundle is not None
+            and settings.context_mode == "on"
+            and settings.context_trace_persist
+            else None
+        ),
     )
     yield {
         "event": "done",

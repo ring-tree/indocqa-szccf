@@ -93,10 +93,14 @@ def test_noise_cluster_filtered_by_frequency(tmp_settings):
 async def test_citation_retry_emits_trace(tmp_settings, monkeypatch):
     from app.graph import pipeline
 
-    async def fake_answer_no_citation(question, hits, gateway, history=None, intent=None):
+    async def fake_answer_no_citation(
+        question, hits, gateway, history=None, intent=None, bundle=None, extra_instruction=None
+    ):
         yield "没有任何引用标记的回答。"
 
-    async def fake_answer_with_citation(question, hits, gateway, history=None, intent=None):
+    async def fake_answer_with_citation(
+        question, hits, gateway, history=None, intent=None, bundle=None, extra_instruction=None
+    ):
         yield "补正后的回答 [1]。"
 
     ingest_file(FIXTURE, tmp_settings)
