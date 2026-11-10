@@ -2,6 +2,7 @@
 
 中途已产出内容后不再切换供应商，避免重复输出；仅在尚未产出时切换。
 支持按 profile（primary / backup）指定首选供应商，失败时仍回退到其余已配置供应商。
+生成参数（temperature / max_tokens）固化；对不支持可选参数的模型做显式 400 降级。
 """
 
 import asyncio
@@ -27,6 +28,10 @@ class LLMGateway:
     def __init__(self, settings: Settings, profile: str | None = None):
         self.providers: list[dict] = []
         self.disable_thinking = settings.llm_disable_thinking
+        self.temperature = settings.generation_temperature
+        self.max_tokens = settings.generation_max_tokens
+        self.json_temperature = settings.generation_json_temperature
+        self.json_max_tokens = settings.generation_json_max_tokens
         for pid, base, key, model, primary in (
             (
                 "primary",
@@ -57,6 +62,8 @@ class LLMGateway:
         # 最近一次实际完成的供应商，供 done 事件回传
         self.last_profile: str | None = None
         self.last_model: str | None = None
+        # 最近一次实际发送的生成参数（含参数兼容降级结果）
+        self.last_request: dict | None = None
 
     @property
     def configured(self) -> bool:
@@ -76,73 +83,150 @@ class LLMGateway:
         preferred = [p for p in self.providers if p["id"] == self.profile]
         return preferred + [p for p in self.providers if p["id"] != self.profile]
 
-    async def stream(self, messages: list[dict]) -> AsyncIterator[str]:
+    def _build_body(
+        self,
+        provider: dict,
+        messages: list[dict],
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        json_mode: bool = False,
+        include_temperature: bool = True,
+    ) -> dict:
+        body: dict = {
+            "model": provider["model"],
+            "messages": messages,
+            "stream": True,
+            "max_tokens": (
+                (self.json_max_tokens if json_mode else self.max_tokens)
+                if max_tokens is None
+                else max_tokens
+            ),
+        }
+        if include_temperature:
+            body["temperature"] = (
+                (self.json_temperature if json_mode else self.temperature)
+                if temperature is None
+                else temperature
+            )
+        if provider["primary"] and self.disable_thinking:
+            # 思考型模型关闭思考，降低首 token 延迟；备用供应商不注入该参数
+            body["enable_thinking"] = False
+        if json_mode:
+            body["response_format"] = {"type": "json_object"}
+        return body
+
+    async def _stream_once(self, provider: dict, body: dict) -> AsyncIterator[str]:
+        async with (
+            httpx.AsyncClient(timeout=90) as client,
+            client.stream(
+                "POST",
+                f"{provider['base']}/chat/completions",
+                headers={"Authorization": f"Bearer {provider['key']}"},
+                json=body,
+            ) as resp,
+        ):
+            if resp.status_code in _SWITCHABLE_STATUS:
+                raise httpx.HTTPStatusError(
+                    f"HTTP {resp.status_code}", request=resp.request, response=resp
+                )
+            if resp.status_code >= 400:
+                raise UpstreamError(
+                    f"上游模型返回 HTTP {resp.status_code}", detail=provider["base"]
+                )
+            ait = resp.aiter_lines().__aiter__()
+            first_line = True
+            while True:
+                try:
+                    if first_line:
+                        # 首字节超时：供应商排队/冷启动时尽快切换，不拖满 read timeout
+                        line = await asyncio.wait_for(ait.__anext__(), timeout=3.0)
+                        first_line = False
+                    else:
+                        line = await ait.__anext__()
+                except StopAsyncIteration:
+                    break
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    return
+                choices = json.loads(payload).get("choices") or []
+                if not choices:
+                    continue  # usage 统计帧等无增量内容
+                delta = choices[0].get("delta") or {}
+                content = delta.get("content")
+                if content:
+                    yield content
+
+    async def stream(
+        self,
+        messages: list[dict],
+        json_mode: bool = False,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> AsyncIterator[str]:
         errors: list[str] = []
         for provider in self._ordered():
             produced = False
-            body: dict = {"model": provider["model"], "messages": messages, "stream": True}
-            if provider["primary"] and self.disable_thinking:
-                # 思考型模型关闭思考，降低首 token 延迟；备用供应商不注入该参数
-                body["enable_thinking"] = False
-            try:
-                async with (
-                    httpx.AsyncClient(timeout=90) as client,
-                    client.stream(
-                        "POST",
-                        f"{provider['base']}/chat/completions",
-                        headers={"Authorization": f"Bearer {provider['key']}"},
-                        json=body,
-                    ) as resp,
-                ):
-                    if resp.status_code in _SWITCHABLE_STATUS:
-                        raise httpx.HTTPStatusError(
-                            f"HTTP {resp.status_code}", request=resp.request, response=resp
-                        )
-                    if resp.status_code >= 400:
-                        raise UpstreamError(
-                            f"上游模型返回 HTTP {resp.status_code}", detail=provider["base"]
-                        )
-                    ait = resp.aiter_lines().__aiter__()
-                    first_line = True
-                    while True:
-                        try:
-                            if first_line:
-                                # 首字节超时：供应商排队/冷启动时尽快切换，不拖满 read timeout
-                                line = await asyncio.wait_for(ait.__anext__(), timeout=3.0)
-                                first_line = False
-                            else:
-                                line = await ait.__anext__()
-                        except StopAsyncIteration:
-                            break
-                        if not line.startswith("data:"):
-                            continue
-                        payload = line[5:].strip()
-                        if payload == "[DONE]":
-                            self._mark_used(provider)
-                            return
-                        choices = json.loads(payload).get("choices") or []
-                        if not choices:
-                            continue  # usage 统计帧等无增量内容
-                        delta = choices[0].get("delta") or {}
-                        content = delta.get("content")
-                        if content:
-                            produced = True
-                            yield content
+            # 参数兼容降级：部分模型不支持 temperature / response_format，
+            # 首次按固化参数请求，显式 400 时逐级去掉可选参数重试。
+            attempts = [(json_mode, True)]
+            if json_mode:
+                attempts.extend([(json_mode, False), (False, True), (False, False)])
+            else:
+                attempts.append((False, False))
+            for native_json, include_temperature in attempts:
+                body = self._build_body(
+                    provider,
+                    messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    json_mode=native_json,
+                    include_temperature=include_temperature,
+                )
+                try:
+                    self.last_request = {
+                        "temperature": body.get("temperature"),
+                        "maxTokens": body.get("max_tokens"),
+                        "jsonMode": native_json,
+                        "responseFormat": bool(body.get("response_format")),
+                    }
+                    async for delta in self._stream_once(provider, body):
+                        produced = True
+                        yield delta
                     self._mark_used(provider)
                     return
-            except UpstreamError:
-                raise
-            except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError) as e:
-                if produced:
-                    raise UpstreamError("模型流式中断", detail=str(e)) from e
-                errors.append(f"{provider['base']}: {type(e).__name__} {e}")
+                except UpstreamError as e:
+                    if produced:
+                        raise
+                    errors.append(f"{provider['base']}: {e.message}")
+                    continue  # 400 类参数不兼容：降低参数后重试
+                except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError) as e:
+                    if produced:
+                        raise UpstreamError("模型流式中断", detail=str(e)) from e
+                    errors.append(f"{provider['base']}: {type(e).__name__} {e}")
+                    break
         raise UpstreamError("模型网关不可用（主备均失败）", detail="; ".join(errors))
 
     def _mark_used(self, provider: dict) -> None:
         self.last_profile = provider["id"]
         self.last_model = provider["model"]
 
-    async def complete(self, messages: list[dict]) -> str:
+    async def complete(
+        self,
+        messages: list[dict],
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        json_mode: bool = False,
+    ) -> str:
         """非流式补全（置信度自评等轻量调用），聚合流式实现。"""
-        chunks = [delta async for delta in self.stream(messages)]
+        chunks = [
+            delta
+            async for delta in self.stream(
+                messages,
+                json_mode=json_mode,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        ]
         return "".join(chunks)

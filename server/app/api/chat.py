@@ -59,6 +59,7 @@ async def chat(req: ChatRequest, request: Request) -> StreamingResponse:
             profile=None if req.profile in (None, "auto") else req.profile,
             folder=folder,
             folders=folders or None,
+            response_format=req.response_format,
         ):
             if ev["event"] == "done":
                 ev["data"]["request_id"] = rid

@@ -38,5 +38,7 @@ class ChatRequest(BaseModel):
     # 知识库目录检索范围（空=全库）；folders 支持多选目录
     folder: str | None = Field(default=None, max_length=200)
     folders: list[str] | None = Field(default=None, max_length=20)
+    # 输出格式：text=纯文本（默认）；json=结构化 JSON
+    response_format: str = Field(default="text", pattern="^(text|json)$", alias="responseFormat")
 
     model_config = {"populate_by_name": True}

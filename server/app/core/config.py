@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SERVER_ROOT = Path(__file__).resolve().parents[2]
@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     llm_backup_model: str = ""
     # 思考型模型（qwen3 系）关闭思考阶段以降低首 token 延迟；仅注入主供应商请求
     llm_disable_thinking: bool = True
+    # 生成参数固化：温度、最大生成长度（结构化模式单独设定，保证 JSON 完整）
+    generation_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    generation_max_tokens: int = Field(default=1024, ge=64, le=8192)
+    generation_json_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    generation_json_max_tokens: int = Field(default=1536, ge=64, le=8192)
 
     embed_model: str = "BAAI/bge-m3"
     # auto=优先 Ollama（运行中且模型存在时），否则 local；可显式 local / ollama / minilm

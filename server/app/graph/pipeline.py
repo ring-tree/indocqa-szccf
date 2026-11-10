@@ -6,6 +6,7 @@ SSE 事件顺序：trace* → sources → token* → done（错误时以 error �
 import asyncio
 import re
 from collections.abc import AsyncIterator
+from dataclasses import replace
 
 from app.context import AssemblyRequest, ContextAssembler
 from app.context.errors import ContextError
@@ -14,6 +15,7 @@ from app.context.schema import ContextBundle, TaskState
 from app.core.config import get_settings
 from app.core.exceptions import UpstreamError
 from app.core.llm import LLMGateway
+from app.generation import citations, formatting, safety, structured
 from app.generation.answerer import REFUSAL_TEMPLATE, stream_answer
 from app.graph.graph import run_retrieval
 from app.indexing import store
@@ -71,6 +73,7 @@ def _done(
     boundary: str | None = None,
     scope: list[str] | None = None,
     model: str | None = None,
+    extra: dict | None = None,
 ) -> dict:
     data = {
         "confidence": level,
@@ -82,7 +85,79 @@ def _done(
     }
     if scope is not None:
         data["searched_scope"] = scope
+    if extra:
+        data.update(extra)
     return data
+
+
+async def _emit_text(text: str, size: int = 32) -> AsyncIterator[dict]:
+    for chunk in formatting.split_chunks(text, size):
+        if chunk:
+            yield {"event": "token", "data": {"delta": chunk}}
+
+
+def _finalize_text(text: str, guard: safety.SafetyGuard) -> tuple[str, safety.SafetyResult]:
+    plain = formatting.strip_markdown(text)
+    result = guard.sanitize_output(plain)
+    if result.blocked:
+        return safety.SAFETY_REFUSAL, result
+    return result.text, result
+
+
+def _sanitize_rows(rows: list[dict], guard: safety.SafetyGuard) -> list[dict]:
+    out = []
+    for row in rows:
+        check = guard.inspect(str(row.get("content", "") or ""))
+        content = "[已拦截的不安全内容]" if check.blocked else check.text
+        out.append({**row, "content": content})
+    return out
+
+
+def _sanitize_hits(hits: list[Hit], guard: safety.SafetyGuard) -> tuple[list[Hit], int, int]:
+    kept, dropped, redacted = [], 0, 0
+    for hit in hits:
+        result = guard.sanitize_context(hit.text)
+        if result.blocked:
+            dropped += 1
+            continue
+        if result.text != hit.text:
+            redacted += 1
+            hit = replace(hit, text=result.text, parent_text=result.text)
+        kept.append(hit)
+    return kept, dropped, redacted
+
+
+def _generation_meta(gateway: LLMGateway, settings) -> dict:
+    return gateway.last_request or {
+        "temperature": settings.generation_temperature,
+        "maxTokens": settings.generation_max_tokens,
+        "jsonMode": False,
+        "responseFormat": False,
+    }
+
+
+def _structured_payload(
+    answer: str,
+    sources: list[dict],
+    level: str | None,
+    reason: str,
+    boundary: str | None,
+    model: str | None,
+    audit: citations.CitationAudit | None,
+    trace_id: str | None,
+) -> str:
+    return structured.dumps(
+        structured.build_payload(
+            answer=answer,
+            sources=sources,
+            confidence=level,
+            confidence_reason=reason,
+            boundary=boundary,
+            model=model,
+            audit=audit,
+            trace_id=trace_id,
+        )
+    )
 
 
 def _history_rows(session_id: str, settings) -> list[dict]:
@@ -182,16 +257,49 @@ async def chat_stream(
     profile: str | None = None,
     folder: str | None = None,
     folders: list[str] | None = None,
+    response_format: str = "text",
 ) -> AsyncIterator[dict]:
     settings = settings or get_settings()
     gateway = LLMGateway(settings, profile)
+    guard = safety.SafetyGuard()
+    structured_mode = response_format == "json"
 
     session = session_store.ensure_session(settings.session_db, session_id, message)
     sid = session["id"]
-    rows = _history_rows(sid, settings)
+    rows = _sanitize_rows(_history_rows(sid, settings), guard)
     history = _history(rows)
     session_store.append_message(settings.session_db, sid, "user", message)
-    retrieval_query = _context_query(message, history)
+
+    input_check = guard.inspect(message)
+    if input_check.blocked:
+        text = safety.SAFETY_REFUSAL
+        async for event in _emit_text(text):
+            yield event
+        mid = session_store.append_message(
+            settings.session_db,
+            sid,
+            "assistant",
+            text,
+            confidence="low",
+            confidence_reason="输入触发安全拦截",
+            boundary="refused",
+        )
+        yield {
+            "event": "done",
+            "data": _done(
+                "low",
+                "输入触发安全拦截",
+                sid,
+                mid,
+                "refused",
+                model=None,
+                extra={"safety": input_check.to_dict(), "response_format": response_format},
+            ),
+        }
+        return
+
+    safe_message = input_check.text
+    retrieval_query = _context_query(safe_message, history)
 
     if mode == "direct":
         if not gateway.configured:
@@ -202,18 +310,40 @@ async def chat_stream(
                 [
                     {"role": "system", "content": _DIRECT_SYSTEM},
                     *history,
-                    {"role": "user", "content": message},
-                ]
+                    {"role": "user", "content": safe_message},
+                ],
+                json_mode=False,
             ):
                 parts.append(delta)
-                yield {"event": "token", "data": {"delta": delta}}
         except UpstreamError as e:
             yield {"event": "error", "data": {"code": e.code, "message": e.message}}
             return
+        plain, safety_result = _finalize_text("".join(parts), guard)
+        if structured_mode:
+            output = _structured_payload(plain, [], None, "", None, gateway.last_model, None, None)
+        else:
+            output = plain
+        async for event in _emit_text(output):
+            yield event
         mid = session_store.append_message(
-            settings.session_db, sid, "assistant", "".join(parts), model=gateway.last_model
+            settings.session_db, sid, "assistant", output, model=gateway.last_model
         )
-        yield {"event": "done", "data": _done(None, "", sid, mid, model=gateway.last_model)}
+        yield {
+            "event": "done",
+            "data": _done(
+                None,
+                "",
+                sid,
+                mid,
+                model=gateway.last_model,
+                extra={
+                    "response_format": response_format,
+                    "json_valid": structured_mode,
+                    "safety": safety_result.to_dict(),
+                    "generation_params": _generation_meta(gateway, settings),
+                },
+            ),
+        }
         return
 
     retrieval = await run_retrieval(
@@ -228,19 +358,34 @@ async def chat_stream(
         yield {"event": "trace", "data": step}
 
     plan = retrieval["plan"]
-    hits = retrieval["hits"]
+    hits, safety_dropped, safety_redacted = _sanitize_hits(retrieval["hits"], guard)
+    retrieval["hits"] = hits
     scope = _scope(settings, folder, folders)
+    if safety_dropped or safety_redacted:
+        step = {
+            "stage": "safety",
+            "result": f"上下文过滤 {safety_dropped} 条，脱敏 {safety_redacted} 条",
+        }
+        retrieval["trace"] = retrieval["trace"] + [step]
+        yield {"event": "trace", "data": step}
 
     if plan.get("skip_retrieval"):
-        parts = []
-        async for ev in _chitchat_reply(message, gateway, history):
-            parts.append(ev["data"]["delta"])
-            yield ev
+        raw = await _chitchat_text(safe_message, gateway, history)
+        plain, safety_result = _finalize_text(raw, guard)
+        output = (
+            _structured_payload(
+                plain, [], "high", "寒暄，无需检索", None, gateway.last_model, None, None
+            )
+            if structured_mode
+            else plain
+        )
+        async for event in _emit_text(output):
+            yield event
         mid = session_store.append_message(
             settings.session_db,
             sid,
             "assistant",
-            "".join(parts),
+            output,
             trace=retrieval["trace"],
             confidence="high",
             confidence_reason="寒暄，无需检索",
@@ -248,7 +393,19 @@ async def chat_stream(
         )
         yield {
             "event": "done",
-            "data": _done("high", "寒暄，无需检索", sid, mid, model=gateway.last_model),
+            "data": _done(
+                "high",
+                "寒暄，无需检索",
+                sid,
+                mid,
+                model=gateway.last_model,
+                extra={
+                    "response_format": response_format,
+                    "json_valid": structured_mode,
+                    "safety": safety_result.to_dict(),
+                    "generation_params": _generation_meta(gateway, settings),
+                },
+            ),
         }
         return
 
@@ -260,7 +417,16 @@ async def chat_stream(
         retrieval["trace"] = retrieval["trace"] + [{"stage": "boundary", "result": reason}]
         yield {"event": "trace", "data": retrieval["trace"][-1]}
         async for ev in _boundary_reply(
-            message, gateway, settings, sid, retrieval["trace"], scope, history, hits
+            safe_message,
+            gateway,
+            settings,
+            sid,
+            retrieval["trace"],
+            scope,
+            history,
+            hits,
+            guard=guard,
+            response_format=response_format,
         ):
             yield ev
         return
@@ -300,7 +466,16 @@ async def chat_stream(
                     ]
                     yield {"event": "trace", "data": retrieval["trace"][-1]}
                     async for ev in _boundary_reply(
-                        message, gateway, settings, sid, retrieval["trace"], scope, history, hits
+                        safe_message,
+                        gateway,
+                        settings,
+                        sid,
+                        retrieval["trace"],
+                        scope,
+                        history,
+                        hits,
+                        guard=guard,
+                        response_format=response_format,
                     ):
                         yield ev
                     return
@@ -312,111 +487,169 @@ async def chat_stream(
                 "data": {"stage": "context", "result": f"组装降级：{e.code}"},
             }
 
-    yield {
-        "event": "sources",
-        "data": {"items": [_source_item(h, i) for i, h in enumerate(answer_hits, 1)]},
-    }
-
-    answer_parts: list[str] = []
-    prefix = ""
-    started = False
-    try:
+    async def generate(extra: str | None = None) -> str:
+        parts: list[str] = []
         async for delta in stream_answer(
-            message,
+            safe_message,
             answer_hits,
             gateway,
             history,
             retrieval["intent"],
             bundle=bundle if settings.context_mode == "on" else None,
+            extra_instruction=extra,
+            json_mode=structured_mode,
         ):
-            if not started:
-                prefix += delta
-                if _refusal_head(prefix):
-                    # 命中的块与问题无关、模型整段拒答：清空引用并转通用知识回答
-                    yield {"event": "sources", "data": {"items": []}}
-                    yield {
-                        "event": "trace",
-                        "data": {"stage": "boundary", "result": "资料未覆盖，转通用知识回答"},
-                    }
-                    async for ev in _boundary_reply(
-                        message,
-                        gateway,
-                        settings,
-                        sid,
-                        retrieval["trace"],
-                        scope,
-                        history,
-                        answer_hits,
-                    ):
-                        yield ev
-                    return
-                if len(prefix) < 40:
-                    continue
-                answer_parts.append(prefix)
-                yield {"event": "token", "data": {"delta": prefix}}
-                started = True
-                continue
-            answer_parts.append(delta)
-            yield {"event": "token", "data": {"delta": delta}}
+            parts.append(delta)
+        return "".join(parts)
+
+    try:
+        raw = await generate(structured.JSON_INSTRUCTION if structured_mode else None)
     except UpstreamError as e:
         yield {"event": "error", "data": {"code": e.code, "message": e.message}}
         return
-    if not started and prefix:
-        answer_parts.append(prefix)
-        yield {"event": "token", "data": {"delta": prefix}}
 
-    answer = "".join(answer_parts)
-    _cov, has_valid_citation = _citation_coverage(answer, answer_hits)
-    if answer_hits and not has_valid_citation:
+    if _refusal_head(raw):
+        # 命中的块与问题无关、模型整段拒答：清空引用并转通用知识回答
+        yield {"event": "sources", "data": {"items": []}}
+        yield {
+            "event": "trace",
+            "data": {"stage": "boundary", "result": "资料未覆盖，转通用知识回答"},
+        }
+        async for ev in _boundary_reply(
+            safe_message,
+            gateway,
+            settings,
+            sid,
+            retrieval["trace"],
+            scope,
+            history,
+            answer_hits,
+            guard=guard,
+            response_format=response_format,
+        ):
+            yield ev
+        return
+
+    parsed = None
+    if structured_mode:
+        parsed = structured.parse_model_json(raw)
+        if parsed is None:
+            yield {
+                "event": "trace",
+                "data": {"stage": "structured_retry", "result": "JSON 解析失败，重生成"},
+            }
+            try:
+                raw = await generate(
+                    f"{structured.JSON_INSTRUCTION}{structured.STRICT_JSON_INSTRUCTION}"
+                )
+                parsed = structured.parse_model_json(raw)
+            except UpstreamError:
+                parsed = None
+
+    base_text = parsed["answer"] if parsed else raw
+    if answer_hits and not _citation_coverage(base_text, answer_hits)[1]:
         # 引用补正：回答缺少有效引用时带强指令重生成一次（可从 trace 观察）
         yield {
             "event": "trace",
             "data": {"stage": "citation_retry", "result": "回答缺少有效引用，重生成补正"},
         }
-        answer_parts = []
+        instruction = "（必须做到：每个事实句末标注引用编号，如 [1] [2]，编号对应资料标号）"
+        if structured_mode:
+            instruction = f"{structured.JSON_INSTRUCTION}{instruction}"
         try:
-            yield {"event": "token", "data": {"delta": "\n——引用补正——\n"}}
-            async for delta in stream_answer(
-                message,
-                answer_hits,
-                gateway,
-                history,
-                retrieval["intent"],
-                bundle=bundle if settings.context_mode == "on" else None,
-                extra_instruction=(
-                    "（必须做到：每个事实句末标注引用编号，如 [1] [2]，编号对应资料标号）"
-                ),
-            ):
-                answer_parts.append(delta)
-                yield {"event": "token", "data": {"delta": delta}}
+            raw = await generate(instruction)
+            if structured_mode:
+                refreshed = structured.parse_model_json(raw)
+                if refreshed:
+                    parsed = refreshed
+                    base_text = refreshed["answer"]
+                else:
+                    base_text = raw
+            else:
+                base_text = raw
         except UpstreamError:
-            pass  # 补正失败保留原答案
-        if answer_parts:
-            answer = "".join(answer_parts)
+            pass
+
+    plain = formatting.strip_markdown(base_text)
+    plain, audit = citations.enforce_citations(plain, answer_hits)
+    if not plain.strip():
+        plain = REFUSAL_TEMPLATE.format(sections="、".join(scope) or "知识库")
+    plain, safety_result = _finalize_text(plain, guard)
+    boundary = None
+    if safety_result.blocked:
+        boundary = "refused"
+        answer_hits = []
+        audit = citations.CitationAudit()
+        yield {"event": "sources", "data": {"items": []}}
+        yield {
+            "event": "trace",
+            "data": {"stage": "safety", "result": "输出触发安全拦截"},
+        }
+    else:
+        yield {
+            "event": "sources",
+            "data": {"items": [_source_item(h, i) for i, h in enumerate(answer_hits, 1)]},
+        }
 
     answer_model = gateway.last_model  # 自评会再次调用网关，先记住回答实际使用的模型
-    level, reason = await _confidence(message, answer, answer_hits, gateway, settings)
+    generation_params = _generation_meta(gateway, settings)
+    level, reason = await _confidence(safe_message, plain, answer_hits, gateway, settings)
+    source_items = [_source_item(h, i) for i, h in enumerate(answer_hits, 1)]
+    if structured_mode:
+        output = _structured_payload(
+            plain,
+            source_items,
+            level,
+            reason,
+            boundary,
+            answer_model,
+            audit,
+            bundle.manifest.trace_id if bundle is not None else None,
+        )
+    else:
+        output = plain
+    async for event in _emit_text(output):
+        yield event
+
     mid = session_store.append_message(
         settings.session_db,
         sid,
         "assistant",
-        answer,
-        sources=[_source_item(h, i) for i, h in enumerate(answer_hits, 1)],
+        output,
+        sources=source_items,
         trace=retrieval["trace"],
         confidence=level,
         confidence_reason=reason,
+        boundary=boundary,
         model=answer_model,
         context_manifest=(
             bundle.manifest.to_dict()
             if bundle is not None
             and settings.context_mode == "on"
             and settings.context_trace_persist
+            and boundary is None
             else None
         ),
     )
     yield {
         "event": "done",
-        "data": _done(level, reason, sid, mid, None, scope, model=answer_model),
+        "data": _done(
+            level,
+            reason,
+            sid,
+            mid,
+            boundary,
+            scope,
+            model=answer_model,
+            extra={
+                "response_format": response_format,
+                "json_valid": structured_mode,
+                "model_json_valid": bool(structured_mode and parsed is not None),
+                "citation_audit": audit.to_dict(),
+                "safety": safety_result.to_dict(),
+                "generation_params": generation_params,
+            },
+        ),
     }
 
 
@@ -429,64 +662,65 @@ async def _boundary_reply(
     scope: list[str],
     history: list[dict] | None = None,
     weak_hits: list[Hit] | None = None,
+    guard: safety.SafetyGuard | None = None,
+    response_format: str = "text",
 ) -> AsyncIterator[dict]:
     """库外问题：有生成模型则用通用知识回答并标注；无模型则拒答并说明检索范围。"""
+    guard = guard or safety.SafetyGuard()
+    structured_mode = response_format == "json"
     parts: list[str] = []
     boundary = "general"
     reason = "知识库未覆盖，已用通用知识回答"
     if gateway.configured:
-        parts.append(_BOUNDARY_LABEL)
-        yield {"event": "token", "data": {"delta": _BOUNDARY_LABEL}}
         try:
-            first = True
-            buf = ""
             async for delta in gateway.stream(
                 [
                     {"role": "system", "content": _GENERAL_SYSTEM},
                     *(history or []),
                     {"role": "user", "content": message},
-                ]
+                ],
+                json_mode=False,
             ):
-                if first:
-                    buf += delta
-                    if len(buf) < 20:
-                        continue
-                    cleaned = _LABEL_ECHO.sub("", buf)
-                    if cleaned:
-                        parts.append(cleaned)
-                        yield {"event": "token", "data": {"delta": cleaned}}
-                    first = False
-                    continue
                 parts.append(delta)
-                yield {"event": "token", "data": {"delta": delta}}
-            if first and buf:
-                cleaned = _LABEL_ECHO.sub("", buf)
-                if cleaned:
-                    parts.append(cleaned)
-                    yield {"event": "token", "data": {"delta": cleaned}}
         except UpstreamError:
             fallback = REFUSAL_TEMPLATE.format(sections="、".join(scope) or "知识库")
             parts = [fallback]
-            yield {"event": "token", "data": {"delta": fallback}}
             boundary, reason = "refused", "通用回答失败，已回退拒答"
     else:
         fallback = REFUSAL_TEMPLATE.format(sections="、".join(scope) or "知识库")
         parts = [fallback]
-        yield {"event": "token", "data": {"delta": fallback}}
         boundary, reason = "refused", "检索无有效命中，答案为拒答说明"
 
+    raw = _LABEL_ECHO.sub("", "".join(parts))
     if weak_hits:
-        hint = "\n\n可能相关的章节：" + "；".join(
+        raw += "\n\n可能相关的章节：" + "；".join(
             f"{h.doc_name} · {h.section}" for h in weak_hits[:3]
         )
-        parts.append(hint)
-        yield {"event": "token", "data": {"delta": hint}}
+    plain, safety_result = _finalize_text(raw, guard)
+    if safety_result.blocked:
+        boundary, reason = "refused", "输出触发安全拦截"
+
+    if structured_mode:
+        output = _structured_payload(
+            plain,
+            [],
+            "low",
+            reason,
+            boundary,
+            gateway.last_model if boundary == "general" else None,
+            None,
+            None,
+        )
+    else:
+        output = f"{_BOUNDARY_LABEL}{plain}" if boundary == "general" else plain
+    async for event in _emit_text(output):
+        yield event
 
     mid = session_store.append_message(
         settings.session_db,
         session_id,
         "assistant",
-        "".join(parts),
+        output,
         trace=trace,
         confidence="low",
         confidence_reason=reason,
@@ -503,14 +737,19 @@ async def _boundary_reply(
             boundary,
             scope,
             model=gateway.last_model if boundary == "general" else None,
+            extra={
+                "response_format": response_format,
+                "json_valid": structured_mode,
+                "safety": safety_result.to_dict(),
+                "generation_params": _generation_meta(gateway, settings),
+            },
         ),
     }
 
 
-async def _chitchat_reply(
-    message: str, gateway: LLMGateway, history: list[dict]
-) -> AsyncIterator[dict]:
+async def _chitchat_text(message: str, gateway: LLMGateway, history: list[dict]) -> str:
     if gateway.configured:
+        parts: list[str] = []
         try:
             async for delta in gateway.stream(
                 [
@@ -519,11 +758,11 @@ async def _chitchat_reply(
                     {"role": "user", "content": message},
                 ]
             ):
-                yield {"event": "token", "data": {"delta": delta}}
-            return
+                parts.append(delta)
+            return "".join(parts)
         except UpstreamError:
             pass
-    yield {"event": "token", "data": {"delta": "你好，有问题随时问我。"}}
+    return "你好，有问题随时问我。"
 
 
 def _downgrade(level: str) -> str:
@@ -593,7 +832,8 @@ async def _self_eval(question: str, answer: str, gateway: LLMGateway) -> str | N
     )
     try:
         text = await asyncio.wait_for(
-            gateway.complete([{"role": "user", "content": prompt}]), timeout=8
+            gateway.complete([{"role": "user", "content": prompt}], temperature=0.0, max_tokens=8),
+            timeout=8,
         )
     except (TimeoutError, UpstreamError):
         return None
