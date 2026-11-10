@@ -10,6 +10,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
 from app.core.exceptions import (
+    AIUnavailableError,
     DocumentNotFoundError,
     FileTooLargeError,
     ParamError,
@@ -28,6 +29,7 @@ from app.indexing.folders import (
 from app.indexing.ingest import ALLOWED_EXTS, ingest_file
 from app.indexing.lock import write_guard
 from app.indexing.manifest import Manifest
+from app.indexing.moves import batch_move, undo_move
 
 router = APIRouter(prefix="/api/kb")
 
@@ -48,6 +50,31 @@ class FolderRename(BaseModel):
 
 class DocumentMove(BaseModel):
     folder: str = Field(min_length=1, max_length=200)
+
+
+class BatchMoveRequest(BaseModel):
+    doc_ids: list[str] = Field(min_length=1, max_length=200, alias="docIds")
+    folder: str = Field(min_length=1, max_length=200)
+
+    model_config = {"populate_by_name": True}
+
+
+class ClassifyRequest(BaseModel):
+    doc_id: str | None = Field(default=None, max_length=64, alias="docId")
+    filename: str | None = Field(default=None, max_length=300)
+    text: str | None = Field(default=None, max_length=4000)
+
+    model_config = {"populate_by_name": True}
+
+
+class ClassifyFeedback(BaseModel):
+    doc_id: str | None = Field(default=None, alias="docId")
+    suggested: str | None = None
+    chosen: str | None = None
+    action: str = Field(pattern="^(accept|adjust|reject)$")
+    source: str | None = None
+
+    model_config = {"populate_by_name": True}
 
 
 def _folder_or_400(value: str | None, *, default: str | None = DEFAULT_FOLDER) -> str:
@@ -111,8 +138,8 @@ async def ingest(
 
 
 @router.post("/preview")
-async def preview(file: UploadFile) -> dict:
-    """入库预检：解析演练与质量信号，不写入存储。"""
+async def preview(file: UploadFile, classify: bool = False) -> dict:
+    """入库预检：解析演练与质量信号，不写入存储；classify=1 时附带 AI 候选。"""
     filename = pathlib.Path(file.filename or "unnamed").name
     suffix = pathlib.Path(filename).suffix.lower()
     if suffix not in ALLOWED_EXTS:
@@ -130,7 +157,7 @@ async def preview(file: UploadFile) -> dict:
     try:
         from app.indexing.preview import preview_document
 
-        report = await run_in_threadpool(preview_document, path)
+        report = await run_in_threadpool(preview_document, path, None, classify)
     finally:
         path.unlink(missing_ok=True)
     report["filename"] = filename  # 临时文件前缀不应出现在用户看到的预检报告里
@@ -232,20 +259,67 @@ async def delete_folder(path: str, mode: str = "move") -> dict:
         return {"data": {"affected": moved_or_deleted, "mode": mode}}
 
 
+@router.post("/documents/batch-move")
+async def batch_move_documents(body: BatchMoveRequest) -> dict:
+    settings = get_settings()
+    target = _folder_or_400(body.folder)
+    result = await run_in_threadpool(batch_move, settings, body.doc_ids, target)
+    return {"data": result}
+
+
+@router.post("/moves/{operation_id}/undo")
+async def undo_move_operation(operation_id: str) -> dict:
+    settings = get_settings()
+    result = await run_in_threadpool(undo_move, settings, operation_id)
+    return {"data": result}
+
+
 @router.post("/documents/{doc_id}/move")
 async def move_document(doc_id: str, body: DocumentMove) -> dict:
     settings = get_settings()
     target = _folder_or_400(body.folder)
-    with write_guard(settings):
-        manifest = _manifest(settings)
-        if not manifest.get(doc_id):
-            raise DocumentNotFoundError(f"文档不存在: {doc_id}")
-        store.update_doc_folder(settings, doc_id, target)
-        manifest.set_doc_folder(doc_id, target)
-        for item in ancestors(target):
-            manifest.ensure_folder(item)
-        manifest.save()
-        return {"data": {"docId": doc_id, "folder": target}}
+    manifest = _manifest(settings)
+    if not manifest.get(doc_id):
+        raise DocumentNotFoundError(f"文档不存在: {doc_id}")
+    result = await run_in_threadpool(batch_move, settings, [doc_id], target)
+    if result["failed"]:
+        raise DocumentNotFoundError(result["failed"][0].get("reason", "文档不存在"))
+    return {
+        "data": {
+            "docId": doc_id,
+            "folder": target,
+            "operationId": result.get("operationId"),
+            "skipped": bool(result.get("skipped")),
+        }
+    }
+
+
+@router.post("/classify")
+async def classify_document_route(body: ClassifyRequest) -> dict:
+    """AI 分类建议；未配置输出层模型时返回 40904。"""
+    settings = get_settings()
+    from app.classification import service as classify_service
+
+    if not classify_service.is_available(settings):
+        raise AIUnavailableError("无可用模型")
+    if body.doc_id:
+        result = await classify_service.classify_document(settings, body.doc_id)
+    elif body.filename and body.text:
+        result = await classify_service.classify_text(
+            settings, body.filename, body.text, use_llm=True
+        )
+    else:
+        raise ParamError("需要提供 docId，或 filename + text")
+    return {"data": result}
+
+
+@router.post("/classify/feedback")
+async def classify_feedback(body: ClassifyFeedback) -> dict:
+    settings = get_settings()
+    from app.classification import service as classify_service
+
+    classify_service.append_feedback(settings, body.model_dump())
+    return {"data": True}
 
 
 @router.get("/documents")

@@ -244,6 +244,55 @@ def folders_of(settings, chunk_ids: list[str]) -> dict[str, str]:
     }
 
 
+def doc_profile(settings, doc_id: str, max_chunks: int = 5) -> dict:
+    """取文档摘要文本与平均向量，供 AI 分类使用。"""
+    res = _collection(settings).get(
+        where={"doc_id": doc_id}, include=["documents", "metadatas", "embeddings"]
+    )
+    rows = sorted(
+        zip(
+            res.get("ids") or [],
+            res.get("documents") or [],
+            res.get("metadatas") or [],
+            res.get("embeddings") if res.get("embeddings") is not None else [],
+        ),
+        key=lambda row: row[0],
+    )
+    texts = [row[1] for row in rows[:max_chunks]]
+    sections = [(row[2] or {}).get("section", "") for row in rows[:max_chunks]]
+    vectors = [row[3] for row in rows if row[3] is not None]
+    vector = None
+    if vectors:
+        size = len(vectors[0])
+        vector = [sum(vec[i] for vec in vectors) / len(vectors) for i in range(size)]
+    return {"texts": texts, "sections": sections, "vector": vector}
+
+
+def folder_neighbors(
+    settings, vector: list[float], exclude_doc_id: str | None = None, top_n: int = 60
+) -> list[dict]:
+    """按向量召回相似块，返回目录维度的相似度与章节证据。"""
+    res = _collection(settings).query(
+        query_embeddings=[vector],
+        n_results=top_n,
+        include=["metadatas", "distances"],
+    )
+    out: list[dict] = []
+    for meta, dist in zip(res["metadatas"][0], res["distances"][0]):
+        meta = dict(meta or {})
+        if exclude_doc_id and meta.get("doc_id") == exclude_doc_id:
+            continue
+        out.append(
+            {
+                "folder": meta.get("folder") or DEFAULT_FOLDER,
+                "doc_id": meta.get("doc_id", ""),
+                "section": meta.get("section", ""),
+                "sim": 1.0 - float(dist),
+            }
+        )
+    return out
+
+
 def update_doc_folder(settings, doc_id: str, folder: str) -> int:
     """只改元数据，不重新嵌入；返回更新的块数。"""
     with write_guard(settings):

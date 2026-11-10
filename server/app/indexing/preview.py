@@ -15,7 +15,7 @@ _LATIN = re.compile(r"[A-Za-z]")
 _TOC_LINE = re.compile(r"\.{4,}\s*\d+\s*$")
 
 
-def preview_document(path, settings=None) -> dict:
+def preview_document(path, settings=None, classify: bool = False) -> dict:
     settings = settings or get_settings()
     path = pathlib.Path(path)
     doc = load_document(path)
@@ -80,7 +80,7 @@ def preview_document(path, settings=None) -> dict:
         )
 
     language = "zh" if cjk >= latin else "en"
-    return {
+    report = {
         "filename": path.name,
         "status": status,
         "pages": doc.pages,
@@ -94,6 +94,31 @@ def preview_document(path, settings=None) -> dict:
         "duplicated": bool(existed),
         "issues": issues,
     }
+    if classify:
+        report["classification"] = _classify_preview(settings, doc)
+    return report
+
+
+def _classify_preview(settings, doc) -> dict:
+    """预检后可选执行 AI 分类；未配置模型时返回不可用标记而非报错。"""
+    import asyncio
+
+    from app.classification import service as classify_service
+
+    if not classify_service.is_available(settings):
+        return {"available": False, "reason": "no_model"}
+    text = "\n".join(p.text for p in doc.paragraphs)[:2000]
+    try:
+        return asyncio.run(
+            classify_service.classify_text(settings, doc.filename, text, use_llm=False)
+        )
+    except Exception as e:  # noqa: BLE001 分类失败不应影响预检结果
+        return {
+            "available": True,
+            "candidates": [],
+            "reason": "classify_failed",
+            "error": str(e),
+        }
 
 
 def main(argv: list[str]) -> int:

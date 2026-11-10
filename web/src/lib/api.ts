@@ -1,6 +1,7 @@
 import { postSSE } from "./sse";
 import type {
   ChatMode,
+  ClassificationResult,
   DonePayload,
   KBDocument,
   KBFolder,
@@ -138,6 +139,7 @@ export interface PreviewReport {
   language: string;
   duplicated: boolean;
   issues: PreviewIssue[];
+  classification?: ClassificationResult;
 }
 
 async function postFile<T>(path: string, file: File): Promise<T> {
@@ -146,9 +148,62 @@ async function postFile<T>(path: string, file: File): Promise<T> {
   return jsonOrThrow<T>(await fetch(path, { method: "POST", body: form }));
 }
 
-export async function previewDocument(file: File): Promise<PreviewReport> {
-  const body = await postFile<{ data: PreviewReport }>("/api/kb/preview", file);
+export async function previewDocument(
+  file: File,
+  classify = false,
+): Promise<PreviewReport> {
+  const suffix = classify ? "?classify=1" : "";
+  const body = await postFile<{ data: PreviewReport }>(`/api/kb/preview${suffix}`, file);
   return body.data;
+}
+
+export async function classifyDocument(docId: string): Promise<ClassificationResult> {
+  const body = await jsonOrThrow<{ data: ClassificationResult }>(
+    await fetch("/api/kb/classify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ docId }),
+    }),
+  );
+  return body.data;
+}
+
+export async function sendClassifyFeedback(payload: {
+  docId?: string | null;
+  suggested?: string | null;
+  chosen?: string | null;
+  action: "accept" | "adjust" | "reject";
+  source?: string;
+}): Promise<void> {
+  await jsonOrThrow(
+    await fetch("/api/kb/classify/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+}
+
+export async function batchMoveDocuments(
+  docIds: string[],
+  folder: string,
+): Promise<{ operationId: string | null; moved: string[]; skipped: string[]; failed: unknown[] }> {
+  const body = await jsonOrThrow<{
+    data: { operationId: string | null; moved: string[]; skipped: string[]; failed: unknown[] };
+  }>(
+    await fetch("/api/kb/documents/batch-move", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ docIds, folder }),
+    }),
+  );
+  return body.data;
+}
+
+export async function undoMove(operationId: string): Promise<void> {
+  await jsonOrThrow(
+    await fetch(`/api/kb/moves/${operationId}/undo`, { method: "POST" }),
+  );
 }
 
 export async function uploadDocument(

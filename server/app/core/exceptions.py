@@ -67,6 +67,13 @@ class ChromaBusyError(AppError):
     http_status = 409
 
 
+class AIUnavailableError(AppError):
+    """40904 未配置输出层模型，AI 辅助能力不可用。"""
+
+    code = 40904
+    http_status = 409
+
+
 class UpstreamError(AppError):
     """42901 上游模型限流或不可用（已尝试主备切换）。"""
 

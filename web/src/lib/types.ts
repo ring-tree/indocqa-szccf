@@ -81,4 +81,22 @@ export interface KBFolder {
   chunkCount: number;
 }
 
+export interface ClassificationCandidate {
+  path: string;
+  confidence: number;
+  level: "high" | "mid" | "low";
+  reason: string;
+  evidence: string[];
+}
+
+export interface ClassificationResult {
+  available: boolean;
+  candidates?: ClassificationCandidate[];
+  fallback?: boolean;
+  reason?: string;
+  latencyMs?: number;
+  model?: string | null;
+  error?: string;
+}
+
 export type ChatMode = "kb" | "direct";
