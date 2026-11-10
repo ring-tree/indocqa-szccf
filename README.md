@@ -74,21 +74,24 @@
 ## 快速开始与实验复现
 
 ```bash
-# 1. 安装
-cd server && pip install -e . && cd ..
-
-# 2. 建库 + 术语簇（幂等；内置工业语料与模型权重，克隆即用）
+# 0. 环境：uv 管理依赖（Python 3.13），虚拟环境固定在 server/.venv
 cd server
+uv sync --extra dev          # 按 uv.lock 安装运行时 + 测试依赖
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
+
+# 1. 建库 + 术语簇（幂等；内置工业语料与模型权重，克隆即用）
 python -m app.indexing.ingest ../data/corpus
 python -m app.retrieval.terms
 
-# 3. 复现基线对比实验（三配置 × 40 题，自动生成报告）
+# 2. 复现基线对比实验（三配置 × 40 题，自动生成报告）
 cd .. && python eval/harness.py
 
-# 4. 启动问答服务与前端
-cd server && uvicorn app.main:app --port 8000 &
+# 3. 启动问答服务与前端
+cd server && python -m uvicorn app.main:app --port 8000
 cd web && npm install && npm run dev    # http://localhost:5173
 ```
+
+> 依赖只安装到 `server/.venv`，请勿再向全局 Python 安装依赖；CI 使用 `uv sync --frozen --extra dev`。
 
 单测：`cd server && python -m pytest -q`（48 个用例）。
 

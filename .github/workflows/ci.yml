@@ -13,14 +13,17 @@ jobs:
         working-directory: server
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-          cache: pip
-      - run: pip install -r requirements.lock
-      - run: ruff check .
-      - run: ruff format --check .
-      - run: python -m pytest -q
+      - run: uv sync --frozen --extra dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
 
   frontend:
     runs-on: ubuntu-latest
