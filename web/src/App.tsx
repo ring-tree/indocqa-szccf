@@ -18,14 +18,15 @@ const EXAMPLES = [
 type Theme = "light" | "dark";
 
 const SIDEBAR_MIN = 224;
-const SIDEBAR_MAX = 520;
+const SIDEBAR_MAX_RATIO = 0.4;
 const SIDEBAR_DEFAULT = 272;
 const SIDEBAR_STEP = 16;
 const SIDEBAR_KEY = "indocqa-sidebar-width";
 const THEME_KEY = "indocqa-theme-v2";
 
-function clampSidebarWidth(value: number) {
-  return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(value)));
+function clampSidebarWidth(value: number, viewportWidth = window.innerWidth) {
+  const max = Math.max(SIDEBAR_MIN, Math.round(viewportWidth * SIDEBAR_MAX_RATIO));
+  return Math.min(max, Math.max(SIDEBAR_MIN, Math.round(value)));
 }
 
 function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }) {
@@ -56,12 +57,17 @@ export default function App() {
   );
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const stored = Number(localStorage.getItem(SIDEBAR_KEY));
-    return Number.isFinite(stored) && stored > 0
-      ? clampSidebarWidth(stored)
-      : SIDEBAR_DEFAULT;
+    const initial = Number.isFinite(stored) && stored > 0 ? stored : SIDEBAR_DEFAULT;
+    return clampSidebarWidth(initial, window.innerWidth);
   });
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const [resizing, setResizing] = useState(false);
   const bootstrapped = useRef(false);
   const resizeCleanup = useRef<(() => void) | null>(null);
+  const sidebarMax = Math.max(
+    SIDEBAR_MIN,
+    Math.round(viewportWidth * SIDEBAR_MAX_RATIO),
+  );
 
   const refreshSessions = useCallback(async (selectFirst = false) => {
     try {
@@ -144,10 +150,13 @@ export default function App() {
   const startResize = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       e.preventDefault();
+      setResizing(true);
       const startX = e.clientX;
       const startWidth = sidebarWidth;
       const onMove = (event: PointerEvent) => {
-        setSidebarWidth(clampSidebarWidth(startWidth + event.clientX - startX));
+        setSidebarWidth(
+          clampSidebarWidth(startWidth + event.clientX - startX, window.innerWidth),
+        );
       };
       const onUp = () => {
         window.removeEventListener("pointermove", onMove);
@@ -156,6 +165,7 @@ export default function App() {
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
         resizeCleanup.current = null;
+        setResizing(false);
       };
       resizeCleanup.current = onUp;
       window.addEventListener("pointermove", onMove);
@@ -173,20 +183,38 @@ export default function App() {
       setSidebarWidth((current) =>
         clampSidebarWidth(
           current + (e.key === "ArrowRight" ? SIDEBAR_STEP : -SIDEBAR_STEP),
+          window.innerWidth,
         ),
       );
     } else if (e.key === "Home" || e.key === "End") {
       e.preventDefault();
-      setSidebarWidth(e.key === "Home" ? SIDEBAR_MIN : SIDEBAR_MAX);
+      setSidebarWidth(
+        e.key === "Home"
+          ? SIDEBAR_MIN
+          : clampSidebarWidth(Number.MAX_SAFE_INTEGER, window.innerWidth),
+      );
     }
   }, []);
 
-  const resetSidebarWidth = useCallback(() => setSidebarWidth(SIDEBAR_DEFAULT), []);
+  const resetSidebarWidth = useCallback(
+    () => setSidebarWidth(clampSidebarWidth(SIDEBAR_DEFAULT)),
+    [],
+  );
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_KEY, String(sidebarWidth));
     document.documentElement.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    setSidebarWidth((current) => clampSidebarWidth(current, viewportWidth));
+  }, [viewportWidth]);
 
   useEffect(() => () => resizeCleanup.current?.(), []);
 
@@ -232,9 +260,9 @@ export default function App() {
       <div
         id="app-sidebar"
         style={{ width: sidebarWidth, maxWidth: "86vw" }}
-        className={`fixed inset-y-0 left-0 z-20 md:static md:z-auto ${
-          sidebarOpen ? "" : "hidden md:block"
-        }`}
+        className={`ui-sidebar-shell fixed inset-y-0 left-0 z-20 md:static md:z-auto ${
+          resizing ? "is-resizing" : ""
+        } ${sidebarOpen ? "" : "hidden md:block"}`}
       >
         <Sidebar
           sessions={sessions}
@@ -257,15 +285,15 @@ export default function App() {
         aria-controls="app-sidebar"
         aria-orientation="vertical"
         aria-valuemin={SIDEBAR_MIN}
-        aria-valuemax={SIDEBAR_MAX}
+        aria-valuemax={sidebarMax}
         aria-valuenow={sidebarWidth}
         tabIndex={0}
         onPointerDown={startResize}
         onKeyDown={onResizeKeyDown}
         onDoubleClick={resetSidebarWidth}
-        title="拖拽调整宽度；双击复位；方向键微调"
+        title="拖拽调整宽度（最大 40vw）；双击复位；方向键微调"
         style={{ left: sidebarWidth }}
-        className="ui-resize-handle hidden md:block"
+        className={`ui-resize-handle hidden md:block ${resizing ? "is-resizing" : ""}`}
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">

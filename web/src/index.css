@@ -46,6 +46,7 @@
   --radius-md: 0.85rem;
   --radius-lg: 1.1rem;
   --radius-xl: 1.4rem;
+  --reading-width: 80%;
   --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
 }
@@ -2038,7 +2039,7 @@ button,
 .ui-thread {
   display: flex;
   width: 100%;
-  max-width: 48rem;
+  max-width: var(--reading-width);
   margin-inline: auto;
   flex-direction: column;
   gap: 1.5rem;
@@ -2095,7 +2096,7 @@ button,
 
 .ui-composer > .ui-composer-shell {
   width: 100%;
-  max-width: 48rem;
+  max-width: var(--reading-width);
   margin-inline: auto;
 }
 
@@ -2153,6 +2154,23 @@ button,
 }
 
 /* ---- Buttons, cards, tables, forms ---- */
+.ui-sidebar-shell {
+  transition: width 160ms ease;
+  will-change: width;
+}
+
+.ui-sidebar-shell.is-resizing {
+  transition: none;
+}
+
+.ui-resize-handle {
+  transition: left 160ms ease;
+}
+
+.ui-resize-handle.is-resizing {
+  transition: none;
+}
+
 .ui-btn {
   min-height: 2.15rem;
   border-radius: var(--radius-sm);
@@ -2420,6 +2438,7 @@ button,
 
 @layer utilities {
   .chat-scroll {
+    scrollbar-gutter: stable both-edges;
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--muted) 42%, transparent) transparent;
   }
