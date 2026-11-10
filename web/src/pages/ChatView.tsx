@@ -94,6 +94,7 @@ function ChatView({
   });
   const [scopeOpen, setScopeOpen] = useState(false);
   const scopeRef = useRef<HTMLDivElement>(null);
+  const scopeTouchedRef = useRef(false);
   const [notice, setNotice] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -143,6 +144,7 @@ function ChatView({
   }
 
   function toggleScope(path: string) {
+    scopeTouchedRef.current = true;
     const checked = isScopeChecked(path);
     const descendants = descendantsOf(path).map((item) => item.path);
     const parts = path.split("/");
@@ -156,6 +158,11 @@ function ChatView({
       }
       return [...next];
     });
+  }
+
+  function toggleAllScope() {
+    scopeTouchedRef.current = true;
+    setScopePaths(allSelected ? [] : folders.map((item) => item.path));
   }
 
   function renderScopeNodes(parent: string, depth: number): ReactNode[] {
@@ -181,8 +188,11 @@ function ChatView({
   const scopeRoots = scopePaths.filter(
     (path) => !scopePaths.some((other) => other !== path && path.startsWith(other + "/")),
   );
+  const allSelected =
+    folders.length > 0 &&
+    folders.filter((item) => !item.parent).every((item) => isScopeChecked(item.path));
   const scopeLabel =
-    scopePaths.length === 0
+    scopePaths.length === 0 || allSelected
       ? "全部知识库"
       : scopeRoots.length === 1
         ? scopeRoots[0]
@@ -199,7 +209,14 @@ function ChatView({
     fetchFolders()
       .then((list) => {
         setFolders(list);
-        setScopePaths((current) => current.filter((p) => list.some((f) => f.path === p)));
+        setScopePaths((current) => {
+          const valid = current.filter((p) => list.some((f) => f.path === p));
+          // 默认全选：首次加载或未发生用户操作时，所有目录保持选中
+          if (!scopeTouchedRef.current && valid.length === 0) {
+            return list.map((f) => f.path);
+          }
+          return valid;
+        });
       })
       .catch(() => setFolders([]));
   }, []);
@@ -214,7 +231,13 @@ function ChatView({
     fetchFolders()
       .then((list) => {
         setFolders(list);
-        setScopePaths((current) => current.filter((p) => list.some((f) => f.path === p)));
+        setScopePaths((current) => {
+          const valid = current.filter((p) => list.some((f) => f.path === p));
+          if (!scopeTouchedRef.current && valid.length === 0) {
+            return list.map((f) => f.path);
+          }
+          return valid;
+        });
       })
       .catch(() => setFolders([]));
   }, [active]);
@@ -513,17 +536,18 @@ function ChatView({
                 >
                   <div className="ui-scope-popover-head">
                     <span>选择检索范围</span>
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-sm ui-btn-ghost"
+                      onClick={toggleAllScope}
+                      aria-pressed={allSelected}
+                      title={allSelected ? "取消全选" : "全选所有目录"}
+                      disabled={folders.length === 0}
+                    >
+                      全部知识库
+                    </button>
                   </div>
                   <div className="ui-scope-tree">
-                    <label className="ui-scope-node ui-scope-all">
-                      <input
-                        type="checkbox"
-                        checked={scopePaths.length === 0}
-                        onChange={() => setScopePaths([])}
-                        aria-label="全部知识库"
-                      />
-                      <span className="ui-scope-node-name">全部知识库</span>
-                    </label>
                     {folders.length === 0 && (
                       <p className="ui-scope-empty">还没有目录，上传文档后可选择范围</p>
                     )}

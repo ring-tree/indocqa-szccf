@@ -1577,12 +1577,6 @@ button,
 .ui-scope-node:hover {
   background: var(--surface-2);
 }
-.ui-scope-all {
-  margin-bottom: 6px;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 9px;
-  font-weight: 600;
-}
 .ui-scope-node input {
   flex-shrink: 0;
 }
