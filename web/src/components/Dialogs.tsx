@@ -81,6 +81,9 @@ interface PromptProps {
   confirmText?: string;
   busy?: boolean;
   error?: string;
+  selectOnOpen?: boolean;
+  canSubmit?: (value: string) => boolean;
+  renderHint?: (value: string) => ReactNode;
   onCancel: () => void;
   onSubmit: (value: string) => void;
 }
@@ -95,18 +98,27 @@ export function PromptModal({
   confirmText = "确定",
   busy = false,
   error = "",
+  selectOnOpen = true,
+  canSubmit,
+  renderHint,
   onCancel,
   onSubmit,
 }: PromptProps) {
   const [value, setValue] = useState(initialValue);
   const inputRef = useRef<HTMLInputElement>(null);
+  const enabled = canSubmit ? canSubmit(value) : Boolean(value.trim());
 
   useEffect(() => {
     if (!open) return;
     setValue(initialValue);
     inputRef.current?.focus();
-    inputRef.current?.select();
-  }, [open, initialValue]);
+    if (selectOnOpen) {
+      inputRef.current?.select();
+    } else {
+      const length = inputRef.current?.value.length ?? 0;
+      inputRef.current?.setSelectionRange(length, length);
+    }
+  }, [open, initialValue, selectOnOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -129,7 +141,7 @@ export function PromptModal({
         onSubmit={(event) => {
           event.preventDefault();
           const next = value.trim();
-          if (next && !busy) onSubmit(next);
+          if (next && enabled && !busy) onSubmit(next);
         }}
       >
         <div className="ui-modal-head">
@@ -148,6 +160,7 @@ export function PromptModal({
             onChange={(event) => setValue(event.target.value)}
           />
         </label>
+        {renderHint && <div className="ui-dialog-hint">{renderHint(value)}</div>}
         {error && <p className="ui-form-error">{error}</p>}
         <div className="ui-modal-actions">
           <button type="button" className="ui-btn ui-btn-ghost" disabled={busy} onClick={onCancel}>
@@ -156,7 +169,7 @@ export function PromptModal({
           <button
             type="submit"
             className="ui-btn ui-btn-primary"
-            disabled={busy || !value.trim()}
+            disabled={busy || !enabled}
           >
             {busy ? "处理中…" : confirmText}
           </button>

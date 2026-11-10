@@ -1321,6 +1321,19 @@ button,
   color: var(--muted);
   font-size: 12px;
 }
+.ui-dialog-hint {
+  margin-top: 6px;
+  border-radius: 0.5rem;
+  background: var(--surface-2);
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+.ui-dialog-hint strong {
+  color: var(--ink);
+}
 .ui-form-error {
   margin-top: 8px;
   color: var(--danger);
@@ -1563,6 +1576,12 @@ button,
 }
 .ui-scope-node:hover {
   background: var(--surface-2);
+}
+.ui-scope-all {
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 9px;
+  font-weight: 600;
 }
 .ui-scope-node input {
   flex-shrink: 0;

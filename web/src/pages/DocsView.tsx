@@ -52,6 +52,16 @@ interface FolderForm {
   mode: "create" | "rename";
   value: string;
   source?: string;
+  sourceHasDocs?: boolean;
+}
+
+interface FolderRow {
+  depth: number;
+  path: string;
+  label: string;
+  documentCount: number;
+  chunkCount: number;
+  expandable: boolean;
 }
 
 interface BatchPlanItem {
@@ -86,6 +96,16 @@ const DEFAULT_FOLDER = "未分类";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function cleanFolderPath(value: string): string {
+  return value
+    .trim()
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("/");
 }
 
 function vectorLabel(status: EmbeddingStatus | null): string {
@@ -723,10 +743,13 @@ function DocsView({ className = "", onChanged }: Props) {
 
   function openCreateFolder() {
     setFolderFormError("");
-    const base = activeFolder && hasChildren(activeFolder) ? activeFolder : "";
+    const sourceHasDocs = activeFolder
+      ? docs.some((doc) => doc.folder === activeFolder)
+      : false;
     setFolderForm({
       mode: "create",
-      value: base ? `${base}/新目录` : "",
+      value: activeFolder ? `${activeFolder}/` : "",
+      sourceHasDocs,
     });
   }
 
@@ -736,8 +759,17 @@ function DocsView({ className = "", onChanged }: Props) {
     setFolderForm({ mode: "rename", value: activeFolder, source: activeFolder });
   }
 
-  async function submitFolderForm(path: string) {
+  async function submitFolderForm(rawPath: string) {
     if (!folderForm || folderFormBusy) return;
+    const path = cleanFolderPath(rawPath);
+    if (!path) {
+      setFolderFormError("目录名称不能为空");
+      return;
+    }
+    if (folderForm.mode === "rename" && path === folderForm.source) {
+      setFolderForm(null);
+      return;
+    }
     setFolderFormBusy(true);
     setFolderFormError("");
     try {
@@ -881,6 +913,7 @@ function DocsView({ className = "", onChanged }: Props) {
       for (let index = 1; index < parts.length; index += 1) {
         next.delete(parts.slice(0, index).join("/"));
       }
+      next.delete(path);
       return next;
     });
   }
@@ -1190,25 +1223,63 @@ function DocsView({ className = "", onChanged }: Props) {
     await refresh();
   }
 
-  const visibleFolders = useMemo(() => {
+  const folderChildren = useMemo(() => {
+    const map = new Map<string, KBFolder[]>();
+    for (const item of folders) {
+      const list = map.get(item.parent) ?? [];
+      list.push(item);
+      map.set(item.parent, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return map;
+  }, [folders]);
+
+  const displayFolders = useMemo(() => {
     const term = treeQuery.trim().toLowerCase();
-    if (!term) {
-      return folders.filter((f) => {
-        const parts = f.path.split("/");
-        for (let i = 1; i < parts.length; i += 1) {
-          if (collapsed.has(parts.slice(0, i).join("/"))) return false;
-        }
-        return true;
-      });
-    }
-    const matched = folders.filter((f) => f.path.toLowerCase().includes(term));
     const keep = new Set<string>();
-    for (const item of matched) {
-      const parts = item.path.split("/");
-      for (let i = 1; i <= parts.length; i += 1) keep.add(parts.slice(0, i).join("/"));
+    if (term) {
+      for (const item of folders) {
+        if (!item.path.toLowerCase().includes(term)) continue;
+        const parts = item.path.split("/");
+        for (let i = 1; i <= parts.length; i += 1) {
+          keep.add(parts.slice(0, i).join("/"));
+        }
+      }
     }
-    return folders.filter((f) => keep.has(f.path));
-  }, [folders, collapsed, treeQuery]);
+    const rows: FolderRow[] = [];
+    const walk = (parent: string, depth: number) => {
+      for (const node of folderChildren.get(parent) ?? []) {
+        let end = node;
+        let label = node.name;
+        let matched = term ? node.path.toLowerCase().includes(term) : false;
+        let children = folderChildren.get(end.path) ?? [];
+        // VSCode 式单链合并：只有一个子目录且无分支时，将连续路径合并为一行。
+        while (children.length === 1) {
+          end = children[0];
+          label += `/${end.name}`;
+          matched = matched || (term ? end.path.toLowerCase().includes(term) : false);
+          children = folderChildren.get(end.path) ?? [];
+        }
+        if (!term || matched || keep.has(end.path)) {
+          rows.push({
+            depth,
+            path: end.path,
+            label,
+            documentCount: end.documentCount,
+            chunkCount: end.chunkCount,
+            expandable: children.length > 0,
+          });
+        }
+        if (term || !collapsed.has(end.path)) {
+          walk(end.path, depth + 1);
+        }
+      }
+    };
+    walk("", 0);
+    return rows;
+  }, [folders, folderChildren, collapsed, treeQuery]);
 
   const filtered = useMemo(
     () => docs.filter((d) => d.filename.toLowerCase().includes(query.toLowerCase())),
@@ -1379,20 +1450,20 @@ function DocsView({ className = "", onChanged }: Props) {
               全部文档
             </button>
             <ul className="mt-1 space-y-0.5">
-              {visibleFolders.map((f) => {
-                const depth = f.path.split("/").length - 1;
-                const canExpand = hasChildren(f.path);
-                const isCollapsed = collapsed.has(f.path);
-                const target = dropTarget?.path === f.path ? dropTarget : null;
+              {displayFolders.map((row) => {
+                const canExpand = row.expandable;
+                const isCollapsed = collapsed.has(row.path);
+                const target = dropTarget?.path === row.path ? dropTarget : null;
                 return (
-                  <li key={f.path}>
+                  <li key={row.path}>
                     <div
-                      onDragOver={(e) => onFolderDragOver(e, f.path)}
+                      style={{ marginLeft: row.depth * 16 }}
+                      onDragOver={(e) => onFolderDragOver(e, row.path)}
                       onDragLeave={() =>
-                        setDropTarget((current) => (current?.path === f.path ? null : current))
+                        setDropTarget((current) => (current?.path === row.path ? null : current))
                       }
-                      onDrop={(e) => onFolderDrop(e, f.path)}
-                      onClick={() => onFolderClick(f.path)}
+                      onDrop={(e) => onFolderDrop(e, row.path)}
+                      onClick={() => onFolderClick(row.path)}
                       className={`ui-folder-row ${
                         target ? (target.valid ? "is-drop-target" : "is-drop-invalid") : ""
                       }`}
@@ -1400,33 +1471,32 @@ function DocsView({ className = "", onChanged }: Props) {
                       <button
                         type="button"
                         className="ui-folder-arrow"
-                        aria-label={isCollapsed ? `展开 ${f.name}` : `折叠 ${f.name}`}
+                        aria-label={isCollapsed ? `展开 ${row.path}` : `折叠 ${row.path}`}
                         onClick={(event) => {
                           event.stopPropagation();
-                          toggleFolder(f.path);
+                          toggleFolder(row.path);
                         }}
                       >
                         {canExpand ? (isCollapsed ? "▸" : "▾") : ""}
                       </button>
                       <button
                         type="button"
-                        style={{ paddingLeft: 4 + depth * 12 }}
-                        className={`ui-folder-item ${activeFolder === f.path ? "is-active" : ""}`}
+                        className={`ui-folder-item ${activeFolder === row.path ? "is-active" : ""}`}
                         title={
                           canExpand
-                            ? `${f.path} · 含子目录，仅最末级目录可放文档`
-                            : `${f.path} · ${f.documentCount} 份文档 / ${f.chunkCount} 块`
+                            ? `${row.path} · 含子目录，仅最末级目录可放文档`
+                            : `${row.path} · ${row.documentCount} 份文档 / ${row.chunkCount} 块`
                         }
                       >
-                        <span className="truncate">{f.name}</span>
-                        <span className="ui-folder-count">{f.documentCount}</span>
+                        <span className="truncate">{row.label}</span>
+                        <span className="ui-folder-count">{row.documentCount}</span>
                       </button>
                       {target?.valid && <span className="ui-drop-chip">移入</span>}
                     </div>
                   </li>
                 );
               })}
-              {visibleFolders.length === 0 && (
+              {displayFolders.length === 0 && (
                 <li className="px-2 py-3 text-xs text-[var(--muted)]">
                   {treeQuery ? "没有匹配的目录" : "还没有目录，上传文档后自动创建"}
                 </li>
@@ -1805,12 +1875,42 @@ function DocsView({ className = "", onChanged }: Props) {
         description={
           folderForm?.mode === "rename"
             ? "目录内文档会同步迁移到新路径。"
-            : "用 / 分隔多级目录；已有文档的目录不能再创建子目录。"
+            : folderForm?.sourceHasDocs
+              ? "当前选中目录已有文档，按目录规范不能再创建子目录；可直接修改为其他路径。"
+              : "用 / 分隔多级目录；默认在当前选中目录下创建。"
+        }
+        placeholder={
+          folderForm?.mode === "create" && activeFolder
+            ? "输入子目录名称，可用 / 创建多级"
+            : "例如 设备手册/新机组"
         }
         initialValue={folderForm?.value ?? ""}
         confirmText={folderForm?.mode === "rename" ? "保存" : "创建"}
         busy={folderFormBusy}
         error={folderFormError}
+        selectOnOpen={folderForm?.mode !== "create"}
+        canSubmit={(value) => {
+          const cleaned = cleanFolderPath(value);
+          if (!cleaned) return false;
+          if (folderForm?.mode === "create" && activeFolder && cleaned === activeFolder) {
+            return false;
+          }
+          return true;
+        }}
+        renderHint={
+          folderForm?.mode === "create"
+            ? (value) => {
+                const preview = cleanFolderPath(value);
+                const pending = value.trim().endsWith("/");
+                return (
+                  <>
+                    最终路径：
+                    <strong>{preview ? `/${preview}${pending ? "/…" : ""}` : "/"}</strong>
+                  </>
+                );
+              }
+            : undefined
+        }
         onCancel={() => {
           if (folderFormBusy) return;
           setFolderForm(null);

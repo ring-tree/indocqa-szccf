@@ -513,15 +513,17 @@ function ChatView({
                 >
                   <div className="ui-scope-popover-head">
                     <span>选择检索范围</span>
-                    <button
-                      type="button"
-                      className="ui-btn ui-btn-sm ui-btn-ghost"
-                      onClick={() => setScopePaths([])}
-                    >
-                      全部知识库
-                    </button>
                   </div>
                   <div className="ui-scope-tree">
+                    <label className="ui-scope-node ui-scope-all">
+                      <input
+                        type="checkbox"
+                        checked={scopePaths.length === 0}
+                        onChange={() => setScopePaths([])}
+                        aria-label="全部知识库"
+                      />
+                      <span className="ui-scope-node-name">全部知识库</span>
+                    </label>
                     {folders.length === 0 && (
                       <p className="ui-scope-empty">还没有目录，上传文档后可选择范围</p>
                     )}
