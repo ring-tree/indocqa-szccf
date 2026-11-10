@@ -8,11 +8,13 @@ export async function postSSE(
   url: string,
   body: unknown,
   onEvent: (ev: SSEEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!resp.ok || !resp.body) {
     let message = `HTTP ${resp.status}`;

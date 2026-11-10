@@ -1,33 +1,55 @@
 import { postSSE } from "./sse";
-import type { ChatMode, KBDocument, Source, TraceStep } from "./types";
+import type {
+  ChatMode,
+  DonePayload,
+  KBDocument,
+  ModelProfile,
+  Session,
+  Source,
+  TraceStep,
+} from "./types";
 
 interface ChatCallbacks {
   onSources: (items: Source[]) => void;
   onToken: (delta: string) => void;
   onTrace: (step: TraceStep) => void;
-  onDone: (confidence: string | null, reason: string) => void;
+  onDone: (done: DonePayload) => void;
   onError: (message: string) => void;
 }
 
-export async function sendChat(message: string, mode: ChatMode, cb: ChatCallbacks): Promise<void> {
-  await postSSE("/api/chat", { message, mode }, (ev) => {
-    const data = ev.data as Record<string, unknown>;
-    if (ev.event === "sources") {
-      cb.onSources((data.items as Source[]) ?? []);
-    } else if (ev.event === "token") {
-      cb.onToken(String(data.delta ?? ""));
-    } else if (ev.event === "trace") {
-      cb.onTrace(data as unknown as TraceStep);
-    } else if (ev.event === "done") {
-      cb.onDone(
-        (data.confidence as string | null) ?? null,
-        String(data.confidence_reason ?? ""),
-      );
-    } else if (ev.event === "error") {
-      const err = data as { message?: string; code?: number };
-      cb.onError(err.message ?? `错误 ${err.code ?? ""}`);
-    }
-  });
+export async function sendChat(
+  message: string,
+  mode: ChatMode,
+  sessionId: string | null,
+  cb: ChatCallbacks,
+  signal?: AbortSignal,
+  profile?: string | null,
+): Promise<void> {
+  await postSSE(
+    "/api/chat",
+    {
+      message,
+      mode,
+      ...(sessionId ? { sessionId } : {}),
+      ...(profile ? { profile } : {}),
+    },
+    (ev) => {
+      const data = ev.data as Record<string, unknown>;
+      if (ev.event === "sources") {
+        cb.onSources((data.items as Source[]) ?? []);
+      } else if (ev.event === "token") {
+        cb.onToken(String(data.delta ?? ""));
+      } else if (ev.event === "trace") {
+        cb.onTrace(data as unknown as TraceStep);
+      } else if (ev.event === "done") {
+        cb.onDone(data as unknown as DonePayload);
+      } else if (ev.event === "error") {
+        const err = data as { message?: string; code?: number };
+        cb.onError(err.message ?? `错误 ${err.code ?? ""}`);
+      }
+    },
+    signal,
+  );
 }
 
 async function jsonOrThrow<T>(resp: Response): Promise<T> {
@@ -77,7 +99,9 @@ export async function previewDocument(file: File): Promise<PreviewReport> {
   return body.data;
 }
 
-export async function uploadDocument(file: File): Promise<{ filename: string; chunks: number; duplicated: boolean }> {
+export async function uploadDocument(
+  file: File,
+): Promise<{ filename: string; chunks: number; duplicated: boolean }> {
   const body = await postFile<{ data: { filename: string; chunks: number; duplicated: boolean } }>(
     "/api/kb/ingest",
     file,
@@ -87,6 +111,49 @@ export async function uploadDocument(file: File): Promise<{ filename: string; ch
 
 export async function deleteDocument(docId: string): Promise<void> {
   await jsonOrThrow(await fetch(`/api/kb/documents/${docId}`, { method: "DELETE" }));
+}
+
+export async function fetchSessions(): Promise<Session[]> {
+  const body = await jsonOrThrow<{ data: Session[] }>(await fetch("/api/sessions"));
+  return body.data ?? [];
+}
+
+export async function fetchModels(): Promise<ModelProfile[]> {
+  const body = await jsonOrThrow<{ data: ModelProfile[] }>(await fetch("/api/models"));
+  return body.data ?? [];
+}
+
+export async function fetchSession(sessionId: string): Promise<Session> {
+  const body = await jsonOrThrow<{ data: Session }>(
+    await fetch(`/api/sessions/${sessionId}`),
+  );
+  return body.data;
+}
+
+export async function createSession(title?: string): Promise<Session> {
+  const body = await jsonOrThrow<{ data: Session }>(
+    await fetch("/api/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: title ?? "" }),
+    }),
+  );
+  return body.data;
+}
+
+export async function renameSession(sessionId: string, title: string): Promise<Session> {
+  const body = await jsonOrThrow<{ data: Session }>(
+    await fetch(`/api/sessions/${sessionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }),
+  );
+  return body.data;
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  await jsonOrThrow(await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" }));
 }
 
 export type { ChatMode };
