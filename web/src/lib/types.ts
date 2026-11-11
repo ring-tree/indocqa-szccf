@@ -31,6 +31,10 @@ export interface DonePayload {
   boundary?: string | null;
   searched_scope?: string[];
   model?: string | null;
+  response_format?: "text" | "json";
+  json_valid?: boolean | null;
+  plainText?: string;
+  generation_params?: Record<string, unknown>;
 }
 
 export interface ModelProfile {
@@ -42,6 +46,7 @@ export interface ChatMessage {
   id?: number;
   role: "user" | "assistant";
   content: string;
+  plainText?: string;
   sources?: Source[];
   trace?: TraceStep[];
   confidence?: string | null;

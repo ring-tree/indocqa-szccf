@@ -8,8 +8,9 @@ from app.generation.citations import CitationAudit
 _FENCE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.IGNORECASE)
 
 JSON_INSTRUCTION = (
-    "输出要求：只输出一个合法 JSON 对象，不要 Markdown、不要代码围栏、不要额外解释。"
-    '格式为 {"answer": "纯文本回答，不含 Markdown 标记", "citations": [1, 2]}。'
+    "输出要求：只输出一个合法 JSON 对象，不要代码围栏、不要 JSON 之外的任何解释。"
+    '格式为 {"answer": "回答正文，可包含 Markdown 与 [n] 引用", "citations": [1, 2]}。'
+    "answer 必须是 JSON 字符串，换行与引号必须正确转义。"
 )
 
 STRICT_JSON_INSTRUCTION = (
@@ -31,7 +32,9 @@ def parse_model_json(text: str) -> dict | None:
     if not isinstance(data, dict) or not isinstance(data.get("answer"), str):
         return None
     citations = data.get("citations")
-    if citations is not None and not isinstance(citations, list):
+    if citations is not None and (
+        not isinstance(citations, list) or not all(isinstance(item, int) for item in citations)
+    ):
         return None
     return data
 
@@ -66,11 +69,15 @@ def build_payload(
     model: str | None,
     audit: CitationAudit | None = None,
     trace_id: str | None = None,
+    answer_plain: str | None = None,
+    safety: dict | None = None,
+    generation_params: dict | None = None,
 ) -> dict:
     indices = audit.citations if audit else []
     return {
-        "schemaVersion": "1.0",
+        "schemaVersion": "1.1",
         "answer": answer,
+        "answerPlain": answer_plain if answer_plain is not None else answer,
         "citations": _citation_items(indices, sources),
         "confidence": confidence,
         "confidenceReason": confidence_reason,
@@ -78,8 +85,19 @@ def build_payload(
         "model": model,
         "traceId": trace_id,
         "citationCoverage": round(audit.coverage, 4) if audit else None,
+        "citationAudit": audit.to_dict() if audit else None,
+        "safety": safety or {"blocked": False, "hits": [], "categories": []},
+        "generationParams": generation_params or {},
     }
 
 
 def dumps(payload: dict) -> str:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=False)
+
+
+def is_valid_json(text: str) -> bool:
+    try:
+        json.loads(text)
+    except (TypeError, ValueError):
+        return False
+    return True

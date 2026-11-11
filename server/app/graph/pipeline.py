@@ -97,8 +97,8 @@ async def _emit_text(text: str, size: int = 32) -> AsyncIterator[dict]:
 
 
 def _finalize_text(text: str, guard: safety.SafetyGuard) -> tuple[str, safety.SafetyResult]:
-    plain = formatting.strip_markdown(text)
-    result = guard.sanitize_output(plain)
+    markdown = formatting.normalize_markdown(text)
+    result = guard.sanitize_output(markdown)
     if result.blocked:
         return safety.SAFETY_REFUSAL, result
     return result.text, result
@@ -128,12 +128,17 @@ def _sanitize_hits(hits: list[Hit], guard: safety.SafetyGuard) -> tuple[list[Hit
 
 
 def _generation_meta(gateway: LLMGateway, settings) -> dict:
-    return gateway.last_request or {
-        "temperature": settings.generation_temperature,
-        "maxTokens": settings.generation_max_tokens,
-        "jsonMode": False,
-        "responseFormat": False,
-    }
+    meta = dict(gateway.last_request or {})
+    meta.setdefault("temperature", settings.generation_temperature)
+    meta.setdefault("maxTokens", settings.generation_max_tokens)
+    meta.setdefault("jsonMode", False)
+    meta.setdefault("responseFormat", False)
+    meta.setdefault("temperatureConfigured", settings.generation_temperature)
+    meta.setdefault("maxTokensConfigured", settings.generation_max_tokens)
+    meta.setdefault("jsonTemperatureConfigured", settings.generation_json_temperature)
+    meta.setdefault("jsonMaxTokensConfigured", settings.generation_json_max_tokens)
+    meta["policy"] = "fixed"
+    return meta
 
 
 def _structured_payload(
@@ -145,6 +150,10 @@ def _structured_payload(
     model: str | None,
     audit: citations.CitationAudit | None,
     trace_id: str | None,
+    *,
+    answer_plain: str | None = None,
+    safety_result: safety.SafetyResult | None = None,
+    generation_params: dict | None = None,
 ) -> str:
     return structured.dumps(
         structured.build_payload(
@@ -156,6 +165,9 @@ def _structured_payload(
             model=model,
             audit=audit,
             trace_id=trace_id,
+            answer_plain=answer_plain,
+            safety=safety_result.to_dict() if safety_result else None,
+            generation_params=generation_params,
         )
     )
 
@@ -268,10 +280,14 @@ async def chat_stream(
     sid = session["id"]
     rows = _sanitize_rows(_history_rows(sid, settings), guard)
     history = _history(rows)
-    session_store.append_message(settings.session_db, sid, "user", message)
 
     input_check = guard.inspect(message)
     if input_check.blocked:
+        session_store.append_message(settings.session_db, sid, "user", "[已拦截的不安全输入]")
+        yield {
+            "event": "trace",
+            "data": {"stage": "safety", "result": "输入触发安全拦截"},
+        }
         text = safety.SAFETY_REFUSAL
         async for event in _emit_text(text):
             yield event
@@ -293,12 +309,18 @@ async def chat_stream(
                 mid,
                 "refused",
                 model=None,
-                extra={"safety": input_check.to_dict(), "response_format": response_format},
+                extra={
+                    "safety": input_check.to_dict(),
+                    "response_format": response_format,
+                    "json_valid": False,
+                    "plainText": text,
+                },
             ),
         }
         return
 
     safe_message = input_check.text
+    session_store.append_message(settings.session_db, sid, "user", safe_message)
     retrieval_query = _context_query(safe_message, history)
 
     if mode == "direct":
@@ -318,15 +340,35 @@ async def chat_stream(
         except UpstreamError as e:
             yield {"event": "error", "data": {"code": e.code, "message": e.message}}
             return
-        plain, safety_result = _finalize_text("".join(parts), guard)
+        markdown, safety_result = _finalize_text("".join(parts), guard)
+        plain = formatting.to_plain_text(markdown)
+        boundary = "refused" if safety_result.blocked else None
+        generation_params = _generation_meta(gateway, settings)
         if structured_mode:
-            output = _structured_payload(plain, [], None, "", None, gateway.last_model, None, None)
+            output = _structured_payload(
+                markdown,
+                [],
+                None,
+                "",
+                boundary,
+                gateway.last_model,
+                None,
+                None,
+                answer_plain=plain,
+                safety_result=safety_result,
+                generation_params=generation_params,
+            )
         else:
-            output = plain
+            output = markdown
         async for event in _emit_text(output):
             yield event
         mid = session_store.append_message(
-            settings.session_db, sid, "assistant", output, model=gateway.last_model
+            settings.session_db,
+            sid,
+            "assistant",
+            output,
+            boundary=boundary,
+            model=gateway.last_model,
         )
         yield {
             "event": "done",
@@ -335,12 +377,14 @@ async def chat_stream(
                 "",
                 sid,
                 mid,
+                boundary,
                 model=gateway.last_model,
                 extra={
                     "response_format": response_format,
-                    "json_valid": structured_mode,
+                    "json_valid": structured.is_valid_json(output) if structured_mode else None,
+                    "plainText": plain,
                     "safety": safety_result.to_dict(),
-                    "generation_params": _generation_meta(gateway, settings),
+                    "generation_params": generation_params,
                 },
             ),
         }
@@ -371,13 +415,25 @@ async def chat_stream(
 
     if plan.get("skip_retrieval"):
         raw = await _chitchat_text(safe_message, gateway, history)
-        plain, safety_result = _finalize_text(raw, guard)
+        markdown, safety_result = _finalize_text(raw, guard)
+        plain = formatting.to_plain_text(markdown)
+        generation_params = _generation_meta(gateway, settings)
         output = (
             _structured_payload(
-                plain, [], "high", "寒暄，无需检索", None, gateway.last_model, None, None
+                markdown,
+                [],
+                "high",
+                "寒暄，无需检索",
+                None,
+                gateway.last_model,
+                None,
+                None,
+                answer_plain=plain,
+                safety_result=safety_result,
+                generation_params=generation_params,
             )
             if structured_mode
-            else plain
+            else markdown
         )
         async for event in _emit_text(output):
             yield event
@@ -401,9 +457,10 @@ async def chat_stream(
                 model=gateway.last_model,
                 extra={
                     "response_format": response_format,
-                    "json_valid": structured_mode,
+                    "json_valid": structured.is_valid_json(output) if structured_mode else None,
+                    "plainText": plain,
                     "safety": safety_result.to_dict(),
-                    "generation_params": _generation_meta(gateway, settings),
+                    "generation_params": generation_params,
                 },
             ),
         }
@@ -570,16 +627,20 @@ async def chat_stream(
         except UpstreamError:
             pass
 
-    plain = formatting.strip_markdown(base_text)
-    plain, audit = citations.enforce_citations(plain, answer_hits)
-    if not plain.strip():
-        plain = REFUSAL_TEMPLATE.format(sections="、".join(scope) or "知识库")
-    plain, safety_result = _finalize_text(plain, guard)
+    markdown = formatting.normalize_markdown(base_text)
+    markdown, audit = citations.enforce_citations(markdown, answer_hits)
+    markdown = formatting.normalize_markdown(markdown)
+    if not markdown.strip():
+        markdown = REFUSAL_TEMPLATE.format(sections="、".join(scope) or "知识库")
+    markdown, safety_result = _finalize_text(markdown, guard)
+    plain = formatting.to_plain_text(markdown)
     boundary = None
     if safety_result.blocked:
         boundary = "refused"
         answer_hits = []
         audit = citations.CitationAudit()
+        plain = safety.SAFETY_REFUSAL
+        markdown = plain
         yield {"event": "sources", "data": {"items": []}}
         yield {
             "event": "trace",
@@ -597,7 +658,7 @@ async def chat_stream(
     source_items = [_source_item(h, i) for i, h in enumerate(answer_hits, 1)]
     if structured_mode:
         output = _structured_payload(
-            plain,
+            markdown,
             source_items,
             level,
             reason,
@@ -605,9 +666,12 @@ async def chat_stream(
             answer_model,
             audit,
             bundle.manifest.trace_id if bundle is not None else None,
+            answer_plain=plain,
+            safety_result=safety_result,
+            generation_params=generation_params,
         )
     else:
-        output = plain
+        output = markdown
     async for event in _emit_text(output):
         yield event
 
@@ -643,8 +707,9 @@ async def chat_stream(
             model=answer_model,
             extra={
                 "response_format": response_format,
-                "json_valid": structured_mode,
+                "json_valid": structured.is_valid_json(output) if structured_mode else None,
                 "model_json_valid": bool(structured_mode and parsed is not None),
+                "plainText": plain,
                 "citation_audit": audit.to_dict(),
                 "safety": safety_result.to_dict(),
                 "generation_params": generation_params,
@@ -696,13 +761,15 @@ async def _boundary_reply(
         raw += "\n\n可能相关的章节：" + "；".join(
             f"{h.doc_name} · {h.section}" for h in weak_hits[:3]
         )
-    plain, safety_result = _finalize_text(raw, guard)
+    markdown, safety_result = _finalize_text(raw, guard)
     if safety_result.blocked:
         boundary, reason = "refused", "输出触发安全拦截"
+    plain = formatting.to_plain_text(markdown)
+    generation_params = _generation_meta(gateway, settings)
 
     if structured_mode:
         output = _structured_payload(
-            plain,
+            markdown,
             [],
             "low",
             reason,
@@ -710,9 +777,12 @@ async def _boundary_reply(
             gateway.last_model if boundary == "general" else None,
             None,
             None,
+            answer_plain=plain,
+            safety_result=safety_result,
+            generation_params=generation_params,
         )
     else:
-        output = f"{_BOUNDARY_LABEL}{plain}" if boundary == "general" else plain
+        output = f"{_BOUNDARY_LABEL}{markdown}" if boundary == "general" else markdown
     async for event in _emit_text(output):
         yield event
 
@@ -739,9 +809,10 @@ async def _boundary_reply(
             model=gateway.last_model if boundary == "general" else None,
             extra={
                 "response_format": response_format,
-                "json_valid": structured_mode,
+                "json_valid": structured.is_valid_json(output) if structured_mode else None,
+                "plainText": plain,
                 "safety": safety_result.to_dict(),
-                "generation_params": _generation_meta(gateway, settings),
+                "generation_params": generation_params,
             },
         ),
     }
@@ -832,7 +903,7 @@ async def _self_eval(question: str, answer: str, gateway: LLMGateway) -> str | N
     )
     try:
         text = await asyncio.wait_for(
-            gateway.complete([{"role": "user", "content": prompt}], temperature=0.0, max_tokens=8),
+            gateway.complete([{"role": "user", "content": prompt}], purpose="eval"),
             timeout=8,
         )
     except (TimeoutError, UpstreamError):

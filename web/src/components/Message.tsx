@@ -1,4 +1,5 @@
 import { memo, useCallback, useState } from "react";
+import CopyButton from "./CopyButton";
 import Markdown from "./Markdown";
 import type { ChatMessage, Source, TraceStep } from "../lib/types";
 
@@ -58,7 +59,7 @@ function Message({ message, anchor, onRetry }: Props) {
 
   return (
     <div className="space-y-2">
-      <div className="ui-message-assistant max-w-[92%] break-words px-5 py-4 text-sm leading-6 lg:max-w-[72ch]">
+      <div className="ui-message-assistant relative max-w-[92%] break-words px-5 py-4 pb-10 text-sm leading-6 lg:max-w-[72ch]">
         {message.content ? (
           <Markdown onCite={jumpToSource}>{message.content}</Markdown>
         ) : (
@@ -79,6 +80,9 @@ function Message({ message, anchor, onRetry }: Props) {
               </button>
             )}
           </div>
+        )}
+        {message.content && !message.streaming && (
+          <CopyButton content={message.content} plainText={message.plainText} />
         )}
       </div>
 

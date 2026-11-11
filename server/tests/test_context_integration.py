@@ -112,30 +112,35 @@ def test_persona_is_scoped_to_session(client):
     assert context_two["layers"]["persona"] == 0
 
 
-def test_generation_output_is_plain_text_with_citations(client):
+def test_generation_output_preserves_markdown_with_citations(client):
     events = _ask(client, "LUB 更换的保养周期是多少小时？")
     answer = "".join(event["data"]["delta"] for event in events if event["event"] == "token")
-    assert "**" not in answer and "##" not in answer and "```" not in answer
-    assert "](" not in answer
+    assert answer.strip()
+    assert "```markdown" not in answer[:40]
+    assert "\\*" not in answer and "\\#" not in answer
     if any(char.isdigit() for char in answer):
         assert "[" in answer and "]" in answer
     done = next(event for event in events if event["event"] == "done")["data"]
     assert done["response_format"] == "text"
     assert done["citation_audit"]["coverage"] >= 0
     params = done["generation_params"]
+    assert params["policy"] == "fixed"
     assert params["maxTokens"] == get_settings().generation_max_tokens
     assert params["temperature"] in {None, get_settings().generation_temperature}
+    assert done["plainText"] and "**" not in done["plainText"] and "##" not in done["plainText"]
 
 
 def test_structured_json_output_is_parseable(client):
     events = _ask(client, "LUB 更换的保养周期是多少小时？", response_format="json")
     text = "".join(event["data"]["delta"] for event in events if event["event"] == "token")
     payload = json.loads(text)
-    assert payload["schemaVersion"] == "1.0"
+    assert payload["schemaVersion"] == "1.1"
     assert payload["answer"]
+    assert payload["answerPlain"]
+    assert "```" not in payload["answer"]
     assert isinstance(payload["citations"], list)
     assert payload["confidence"] in {"high", "mid", "low", None}
-    assert "**" not in payload["answer"] and "```" not in payload["answer"]
+    assert payload["generationParams"]["maxTokens"] == get_settings().generation_json_max_tokens
     done = next(event for event in events if event["event"] == "done")["data"]
     assert done["response_format"] == "json"
     assert done["json_valid"] is True

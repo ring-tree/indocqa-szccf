@@ -2574,6 +2574,121 @@ button,
     linear-gradient(180deg, #ffffff 0%, #f4fbf9 100%);
 }
 
+/* ---- Answer copy actions ---- */
+.ui-copy {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.55rem;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.ui-copy-btn {
+  display: inline-flex;
+  height: 1.7rem;
+  width: 1.7rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--muted);
+  opacity: 0;
+  transform: translateY(2px);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease,
+    color 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+.ui-message-assistant:hover .ui-copy-btn,
+.ui-copy:focus-within .ui-copy-btn,
+.ui-copy-btn[aria-expanded="true"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+.ui-copy-btn:hover {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+}
+.ui-copy-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  opacity: 1;
+}
+.ui-copy-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 999px;
+  background: var(--ink);
+  padding: 0.25rem 0.55rem;
+  color: var(--surface);
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 8px 18px -12px rgba(15, 23, 42, 0.55);
+}
+.ui-copy-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.45rem);
+  width: 15rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--surface);
+  box-shadow: 0 18px 34px -22px rgba(15, 23, 42, 0.55);
+}
+.ui-copy-menu button {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 0.15rem;
+  border: 0;
+  background: transparent;
+  padding: 0.55rem 0.75rem;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+.ui-copy-menu button + button {
+  border-top: 1px solid var(--line);
+}
+.ui-copy-menu button:hover,
+.ui-copy-menu button:focus-visible {
+  background: var(--brand-soft);
+  outline: none;
+}
+.ui-copy-menu-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.ui-copy-menu-hint {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+@media (hover: none) {
+  .ui-copy-btn {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- Math rendering ---- */
+.markdown .katex {
+  font-size: 1em;
+}
+.markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+}
+
+
 :root:not([data-theme="dark"]) .ui-docs-view > div > .ui-card:first-child {
   background:
     radial-gradient(

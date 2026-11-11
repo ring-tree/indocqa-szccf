@@ -1,12 +1,24 @@
 import { useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 
-const REMARK_PLUGINS = [remarkGfm];
+const REMARK_PLUGINS = [remarkGfm, remarkMath];
+const REHYPE_PLUGINS = [rehypeKatex];
 
-/** 把 [n] 转成可点击的锚点链接，交给上层滚动到来源卡片。 */
+/** 把 [n] 转成可点击的锚点链接，跳过代码块与公式，避免破坏数学矩阵。 */
 function withCitationLinks(text: string): string {
-  return text.replace(/\[(\d+)\]/g, (_m, n: string) => `[[${n}]](#cite-${n})`);
+  const protectedBlocks: string[] = [];
+  const masked = text.replace(
+    /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]+`|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g,
+    (block) => {
+      protectedBlocks.push(block);
+      return `@@B${protectedBlocks.length - 1}@@`;
+    },
+  );
+  const linked = masked.replace(/\[(\d+)\]/g, (_m, n: string) => `[[${n}]](#cite-${n})`);
+  return linked.replace(/@@B(\d+)@@/g, (_m, index: string) => protectedBlocks[Number(index)]);
 }
 
 interface Props {
@@ -48,7 +60,11 @@ export default function Markdown({ children, onCite }: Props) {
 
   return (
     <div className="markdown">
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
+      <ReactMarkdown
+        remarkPlugins={REMARK_PLUGINS}
+        rehypePlugins={REHYPE_PLUGINS}
+        components={components}
+      >
         {withCitationLinks(children)}
       </ReactMarkdown>
     </div>

@@ -1,4 +1,4 @@
-"""引用约束：事实/数据句必须有 [n] 引用，支持确定性绑定与不可溯源内容剔除。"""
+"""引用约束：Markdown 感知的事实/数据句引用审计、自动绑定与不可溯源内容剔除。"""
 
 import re
 from dataclasses import dataclass, field
@@ -14,11 +14,21 @@ _CLAIM = re.compile(
 )
 _REFUSAL = re.compile(r"现有资料未覆盖|无法根据|没有找到|资料不足")
 _SENTENCE = re.compile(r"[^。！？!?\n]+[。！？!?]?")
-_CLEAN = re.compile(r"[^0-9A-Za-z\u3400-\u9fff]+")
-_LIST_PREFIX = re.compile(r"^\s*\d+\s*[)、.]\s*")
+_LIST_MARK = re.compile(r"^(\s*(?:[-*+]|\d+[.)])\s+)(.*)$")
+_QUOTE_MARK = re.compile(r"^(\s*>\s?)(.*)$")
+_TABLE_ROW = re.compile(r"^\s*\|(.+)\|\s*$")
+_TABLE_SEP = re.compile(r"^\s*\|?[\s:|-]{3,}\|[\s:|-]*\|?\s*$")
+_HEADING = re.compile(r"^\s{0,3}#{1,6}\s")
 _ONLY_CITED = re.compile(r"^\s*\[\d+\]\s*[。！？!?]?\s*$")
 _DUP_CITED = re.compile(r"(\[\d+\])([。！？!?]?)\s*\1")
 _MOVE_TRAILING = re.compile(r"([。！？!?])\s*((?:\[\d+\])+)")
+_INLINE_MARKS = re.compile(r"\*\*|__|~~|`")
+_PROTECTED = re.compile(
+    r"(?s)(```.*?```|~~~.*?~~~|`[^`\n]+`|\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)|"
+    r"(?<!\$)\$(?!\$)[^$\n]+?\$(?!\$))"
+)
+_CITE_TAIL = re.compile(r"([。！？!?]+)((?:\*\*|__|\*|_)?)\s*$")
+_PLACEHOLDER = re.compile(r"\x00CITE\d+\x00")
 
 
 @dataclass
@@ -32,6 +42,8 @@ class CitationAudit:
     claims_bound: int = 0
     claims_removed: int = 0
     invalid_removed: int = 0
+    table_rows: int = 0
+    table_rows_cited: int = 0
 
     @property
     def coverage(self) -> float:
@@ -39,7 +51,8 @@ class CitationAudit:
 
     @property
     def claim_coverage(self) -> float:
-        return self.claims_cited / self.claims if self.claims else 1.0
+        cited = self.claims_cited + self.claims_bound
+        return cited / self.claims if self.claims else 1.0
 
     def to_dict(self) -> dict:
         return {
@@ -52,13 +65,15 @@ class CitationAudit:
             "claimsBound": self.claims_bound,
             "claimsRemoved": self.claims_removed,
             "invalidRemoved": self.invalid_removed,
+            "tableRows": self.table_rows,
+            "tableRowsCited": self.table_rows_cited,
             "coverage": round(self.coverage, 4),
             "claimCoverage": round(self.claim_coverage, 4),
         }
 
 
 def _bigrams(text: str) -> set[str]:
-    clean = _CLEAN.sub("", text)
+    clean = re.sub(r"[^0-9A-Za-z\u3400-\u9fff]+", "", text or "")
     if len(clean) < 2:
         return {clean} if clean else set()
     return {clean[index : index + 2] for index in range(len(clean) - 1)}
@@ -81,81 +96,197 @@ def _best_match(sentence: str, hits: list[Hit]) -> int | None:
 
 
 def _append_citation(sentence: str, index: int) -> str:
-    match = re.search(r"([。！？!?]+)$", sentence)
+    match = _CITE_TAIL.search(sentence)
     if match:
-        return f"{sentence[: match.start()]}[{index}]{match.group(1)}"
+        return f"{sentence[: match.start()]}[{index}]{match.group(1)}{match.group(2)}"
     return f"{sentence}[{index}]"
 
 
+def _clean_invalid(sentence: str, limit: int, audit: CitationAudit) -> str:
+    def replace(match: re.Match) -> str:
+        value = int(match.group(1))
+        if 1 <= value <= limit:
+            return match.group(0)
+        audit.invalid_removed += 1
+        return ""
+
+    return _CITED.sub(replace, sentence)
+
+
+def _append_table_citation(line: str, index: int) -> str:
+    stripped = line.strip()
+    if not stripped.startswith("|"):
+        stripped = f"|{stripped}"
+    if not stripped.endswith("|"):
+        stripped = f"{stripped}|"
+    cells = stripped.strip("|").split("|")
+    for position in range(len(cells) - 1, -1, -1):
+        if cells[position].strip():
+            cells[position] = f"{cells[position].rstrip()} [{index}]"
+            break
+    return "|" + "|".join(cells) + "|"
+
+
+def _analyze(sentence: str) -> tuple[bool, bool]:
+    text = _INLINE_MARKS.sub("", _CITED.sub("", _PLACEHOLDER.sub("", sentence)))
+    is_data = bool(_DATA.search(text))
+    is_claim = bool(_CLAIM.search(text)) and len(text.strip()) >= 4
+    return is_data, is_claim
+
+
+def _process_sentence(
+    sentence: str, hits: list[Hit], audit: CitationAudit, list_prefix: str = ""
+) -> str | None:
+    if not sentence.strip():
+        return list_prefix or None
+    if _ONLY_CITED.match(sentence):
+        match = _CITED.search(sentence)
+        if match and 1 <= int(match.group(1)) <= len(hits):
+            audit.citations.append(int(match.group(1)))
+        return None
+    sentence = _clean_invalid(sentence, len(hits), audit)
+    cited = [int(n) for n in _CITED.findall(sentence)]
+    if cited:
+        audit.citations.extend(cited)
+    if _REFUSAL.search(sentence):
+        return f"{list_prefix}{sentence}"
+    is_data, is_claim = _analyze(sentence)
+    if not is_data and not is_claim:
+        return f"{list_prefix}{sentence}"
+    if is_data:
+        audit.data_facts += 1
+    if is_claim:
+        audit.claims += 1
+    if cited:
+        if is_data:
+            audit.data_cited += 1
+        if is_claim:
+            audit.claims_cited += 1
+        return f"{list_prefix}{sentence}"
+    index = _best_match(sentence, hits)
+    if index is not None:
+        audit.citations.append(index)
+        if is_data:
+            audit.data_cited += 1
+        if is_claim:
+            audit.claims_bound += 1
+        return f"{list_prefix}{_append_citation(sentence, index)}"
+    if is_data:
+        audit.data_removed += 1
+    if is_claim:
+        audit.claims_removed += 1
+    return None
+
+
+def _process_text(text: str, hits: list[Hit], audit: CitationAudit) -> str:
+    rendered = []
+    for sentence in _SENTENCE.findall(text):
+        result = _process_sentence(sentence, hits, audit)
+        if result:
+            rendered.append(result)
+    return "".join(rendered)
+
+
+def _process_table(
+    line: str,
+    hits: list[Hit],
+    audit: CitationAudit,
+    header: bool,
+    separator: bool,
+) -> str | None:
+    if separator or header:
+        return line
+    sentence = re.sub(r"^\s*\|?|\|?\s*$", "", line)
+    audit.table_rows += 1
+    cited = [int(n) for n in _CITED.findall(sentence)]
+    valid = [n for n in cited if 1 <= n <= len(hits)]
+    if valid:
+        audit.table_rows_cited += 1
+        audit.citations.extend(valid)
+        return line
+    if not _DATA.search(_INLINE_MARKS.sub("", sentence)):
+        return line
+    audit.data_facts += 1
+    index = _best_match(sentence, hits)
+    if index is None:
+        audit.data_removed += 1
+        return None
+    audit.data_cited += 1
+    audit.table_rows_cited += 1
+    audit.citations.append(index)
+    return _append_table_citation(line, index)
+
+
+def _protect(text: str) -> tuple[str, dict[str, str]]:
+    placeholders: dict[str, str] = {}
+
+    def save(match: re.Match) -> str:
+        key = f"\u0000CITE{len(placeholders)}\u0000"
+        placeholders[key] = match.group(0)
+        return key
+
+    return _PROTECTED.sub(save, text), placeholders
+
+
+def _restore(text: str, placeholders: dict[str, str]) -> str:
+    for key, value in placeholders.items():
+        text = text.replace(key, value)
+    return text
+
+
 def enforce_citations(answer: str, hits: list[Hit]) -> tuple[str, CitationAudit]:
-    """逐句审计：数据句必须可溯源；无法匹配来源的数据句直接剔除。"""
+    """逐句审计 Markdown 回答：数据句/事实句必须可溯源；无法匹配的内容剔除。"""
     audit = CitationAudit()
     if not answer:
         return answer, audit
-    lines = []
-    for line in answer.splitlines():
-        if not line.strip():
-            lines.append(line)
+    protected, placeholders = _protect(answer)
+    lines = protected.split("\n")
+    headers: set[int] = set()
+    for index, line in enumerate(lines):
+        if not _TABLE_ROW.match(line):
             continue
-        rendered = []
-        for sentence in _SENTENCE.findall(line):
-            if not sentence.strip():
+        for next_index in range(index + 1, len(lines)):
+            if not lines[next_index].strip():
                 continue
-            if _ONLY_CITED.match(sentence):
-                match = _CITED.search(sentence)
-                if match and rendered and 1 <= int(match.group(1)) <= len(hits):
-                    index = int(match.group(1))
-                    rendered[-1] = _append_citation(rendered[-1], index)
-                    audit.citations.append(index)
-                continue  # 独立的 [n] 片段归属前句，避免重复输出
-            before = sentence
-            sentence = _CITED.sub(
-                lambda match: match.group(0) if 1 <= int(match.group(1)) <= len(hits) else "",
-                sentence,
-            )
-            if sentence != before:
-                audit.invalid_removed += 1
-            cited = [int(n) for n in _CITED.findall(sentence)]
-            if cited:
-                audit.citations.extend(cited)
-            if _REFUSAL.search(sentence):
-                rendered.append(sentence)
-                continue
-            clean_sentence = _CITED.sub("", _LIST_PREFIX.sub("", sentence))
-            is_data = bool(_DATA.search(clean_sentence))
-            is_claim = bool(_CLAIM.search(clean_sentence)) and len(clean_sentence) >= 4
-            if not is_data and not is_claim:
-                rendered.append(sentence)
-                continue
-            if is_data:
-                audit.data_facts += 1
-            if is_claim:
-                audit.claims += 1
-            if cited:
-                if is_data:
-                    audit.data_cited += 1
-                if is_claim:
-                    audit.claims_cited += 1
-                rendered.append(sentence)
-                continue
-            index = _best_match(sentence, hits)
-            if index is not None:
-                rendered.append(_append_citation(sentence, index))
-                audit.citations.append(index)
-                if is_data:
-                    audit.data_cited += 1
-                if is_claim:
-                    audit.claims_bound += 1
-                continue
-            if is_data:
-                audit.data_removed += 1
-                continue
-            if is_claim:
-                audit.claims_removed += 1
-                continue
-            rendered.append(sentence)
-        lines.append("".join(rendered))
+            if _TABLE_SEP.match(lines[next_index]):
+                headers.add(index)
+            break
+
+    output: list[str] = []
+    for index, line in enumerate(lines):
+        if not line.strip():
+            output.append(line)
+            continue
+        if _HEADING.match(line):
+            output.append(line)
+            continue
+        if _TABLE_SEP.match(line):
+            output.append(line)
+            continue
+        if _TABLE_ROW.match(line):
+            row = _process_table(line, hits, audit, index in headers, False)
+            if row is not None:
+                output.append(row)
+            continue
+        list_match = _LIST_MARK.match(line)
+        quote_match = _QUOTE_MARK.match(line)
+        if list_match:
+            prefix, body = list_match.group(1), list_match.group(2)
+            rendered = _process_text(body, hits, audit)
+            if rendered.strip():
+                output.append(f"{prefix}{rendered}")
+            continue
+        if quote_match:
+            prefix, body = quote_match.group(1), quote_match.group(2)
+            rendered = _process_text(body, hits, audit)
+            if rendered.strip():
+                output.append(f"{prefix}{rendered}")
+            continue
+        rendered = _process_text(line, hits, audit)
+        if rendered.strip():
+            output.append(rendered)
+
     audit.citations = sorted(set(audit.citations))
-    text = _MOVE_TRAILING.sub(r"\2\1", "\n".join(lines))
+    text = _MOVE_TRAILING.sub(r"\2\1", "\n".join(output))
     text = _DUP_CITED.sub(r"\1\2", text)
-    return text.strip(), audit
+    return _restore(text, placeholders).strip(), audit

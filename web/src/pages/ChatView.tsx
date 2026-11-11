@@ -427,6 +427,7 @@ function ChatView({
               confidenceReason: done.confidence_reason,
               boundary: done.boundary,
               model: done.model,
+              plainText: done.plainText,
             }));
             if (done.sessionId && done.sessionId !== sid) {
               currentRef.current = done.sessionId;
