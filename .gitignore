@@ -35,6 +35,7 @@ models/CACHEDIR.TAG
 Thumbs.db
 .idea/
 .vscode/
+.trae/
 
 # 前端构建产物
 web/dist/
@@ -54,3 +55,10 @@ web/node_modules/
 # 本地交付文档（不入库）
 docs/知识构建过程说明.md
 docs/系统设计文档.md
+
+# 归档资料：设计方案、调研报告、历史评测与截图、诊断记录等非核心文件
+/archive/
+
+# 一键启动脚本的运行日志与临时截图
+/logs/
+/.screenshots/

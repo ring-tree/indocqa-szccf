@@ -1,0 +1,2226 @@
+{
+  "fixed": {
+    "summary": {
+      "mode": "fixed",
+      "questions": 40,
+      "hit@1": 0.75,
+      "hit@3": 0.925,
+      "hit@5": 1.0,
+      "hit@10": 1.0,
+      "recall@5": 0.975,
+      "precision@5": 0.46,
+      "mrr": 0.8395833333333333,
+      "coverage": 0.825,
+      "cross_doc": 0.9090909090909091,
+      "latency_p50": 2409.536000021035,
+      "latency_p95": 2522.281400015345,
+      "latency_p99": 2543.2423999882303,
+      "latency_mean": 2420.6205325004703,
+      "by_type": {
+        "fault": {
+          "questions": 8,
+          "hit@5": 1.0,
+          "recall@5": 1.0,
+          "coverage": 0.9375
+        },
+        "multihop": {
+          "questions": 11,
+          "hit@5": 1.0,
+          "recall@5": 0.9545454545454546,
+          "coverage": 0.6363636363636364
+        },
+        "param": {
+          "questions": 7,
+          "hit@5": 1.0,
+          "recall@5": 1.0,
+          "coverage": 0.8571428571428571
+        },
+        "procedure": {
+          "questions": 7,
+          "hit@5": 1.0,
+          "recall@5": 1.0,
+          "coverage": 0.8571428571428571
+        },
+        "term": {
+          "questions": 7,
+          "hit@5": 1.0,
+          "recall@5": 0.9285714285714286,
+          "coverage": 0.9285714285714286
+        }
+      }
+    },
+    "rows": [
+      {
+        "id": "term-01",
+        "type": "term",
+        "question": "MTBF 是什么意思？和平均无故障时间是一回事吗？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "compressed_air_sourcebook_en.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2393.2203000003938
+      },
+      {
+        "id": "term-02",
+        "type": "term",
+        "question": "LUB 指的是什么油？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "compressed_air_sourcebook_en.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 0.5,
+        "coverage": 0.5,
+        "cross_doc": null,
+        "latency_ms": 2403.4946999745443
+      },
+      {
+        "id": "term-03",
+        "type": "term",
+        "question": "油分芯是什么部件？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 0.3333333333333333,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2409.536000021035
+      },
+      {
+        "id": "term-04",
+        "type": "term",
+        "question": "air compressor 和空压机是同一种设备吗？",
+        "expected_sources": [
+          "螺杆式空压机",
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "compressed_air_sourcebook_en.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": false,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 0.5,
+        "precision@5": 0.2,
+        "mrr": 0.25,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2433.9074000017717
+      },
+      {
+        "id": "term-05",
+        "type": "term",
+        "question": "储气罐内气压达到多少 MPa 时压力开关自动关闭电机？",
+        "expected_sources": [
+          "无油静音"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2543.2423999882303
+      },
+      {
+        "id": "term-06",
+        "type": "term",
+        "question": "screw compressor 指什么类型的压缩机？",
+        "expected_sources": [
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "compressed_air_sourcebook_en.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 0.3333333333333333,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2522.281400015345
+      },
+      {
+        "id": "term-07",
+        "type": "term",
+        "question": "无油静音空气压缩机适用于什么场合？",
+        "expected_sources": [
+          "无油静音"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 1.0,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2472.468399995705
+      },
+      {
+        "id": "param-01",
+        "type": "param",
+        "question": "LUB 更换的保养周期是多少小时？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md"
+        ],
+        "hit@1": false,
+        "hit@3": false,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 0.25,
+        "coverage": 0.0,
+        "cross_doc": null,
+        "latency_ms": 2506.0778000042774
+      },
+      {
+        "id": "param-02",
+        "type": "param",
+        "question": "空气过滤器滤芯多久更换一次？对应什么耗材？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2522.545599989826
+      },
+      {
+        "id": "param-03",
+        "type": "param",
+        "question": "皮带张紧检查的周期是多少？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 0.3333333333333333,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2518.7131999991834
+      },
+      {
+        "id": "param-04",
+        "type": "param",
+        "question": "ZX-50 机组的 MTBF 额定值是多少小时？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2424.3603000068106
+      },
+      {
+        "id": "param-05",
+        "type": "param",
+        "question": "ZX-50 主电机的绝缘等级是什么？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2390.9004000015557
+      },
+      {
+        "id": "param-06",
+        "type": "param",
+        "question": "TS32S 系列螺杆压缩机是哪个厂家的什么产品？",
+        "expected_sources": [
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 1.0,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2408.4833999804687
+      },
+      {
+        "id": "param-07",
+        "type": "param",
+        "question": "储气罐可以用来控制什么？",
+        "expected_sources": [
+          "compressed_air_sourcebook"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 0.5,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2415.6787999963854
+      },
+      {
+        "id": "proc-01",
+        "type": "procedure",
+        "question": "排气温度过高应该按什么步骤处理？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2438.148800021736
+      },
+      {
+        "id": "proc-02",
+        "type": "procedure",
+        "question": "E-05 报警的处理步骤编号是什么？第一步做什么？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2398.314099991694
+      },
+      {
+        "id": "proc-03",
+        "type": "procedure",
+        "question": "空气滤清器应该如何保养？",
+        "expected_sources": [
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.8,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2444.2565999925137
+      },
+      {
+        "id": "proc-04",
+        "type": "procedure",
+        "question": "最小压力止回阀的保养要注意什么？",
+        "expected_sources": [
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2421.711500006495
+      },
+      {
+        "id": "proc-05",
+        "type": "procedure",
+        "question": "日常巡检每天需要记录哪些数据？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "compressed_air_sourcebook_en.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2417.560100002447
+      },
+      {
+        "id": "proc-06",
+        "type": "procedure",
+        "question": "空压机吸气口的空气过滤器有什么作用？",
+        "expected_sources": [
+          "无油静音"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2417.4668999912683
+      },
+      {
+        "id": "proc-07",
+        "type": "procedure",
+        "question": "压缩空气系统 Baselining（基线测量）的目的是什么？",
+        "expected_sources": [
+          "compressed_air_sourcebook"
+        ],
+        "top_docs": [
+          "compressed_air_sourcebook_en.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 0.0,
+        "cross_doc": null,
+        "latency_ms": 2394.386800006032
+      },
+      {
+        "id": "fault-01",
+        "type": "fault",
+        "question": "报错 E05 是什么含义？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2423.1660999939777
+      },
+      {
+        "id": "fault-02",
+        "type": "fault",
+        "question": "故障码 E-01 代表什么问题？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2374.4442999886815
+      },
+      {
+        "id": "fault-03",
+        "type": "fault",
+        "question": "E-11 报警是什么原因？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2409.9504000041634
+      },
+      {
+        "id": "fault-04",
+        "type": "fault",
+        "question": "空压机报错代码 E-05 怎么处理？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2366.7837000102736
+      },
+      {
+        "id": "fault-05",
+        "type": "fault",
+        "question": "固件历史版本中 E-05 曾显示为什么代码？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2389.810299995588
+      },
+      {
+        "id": "fault-06",
+        "type": "fault",
+        "question": "螺杆压缩机的故障分析与排除内容在哪一章？",
+        "expected_sources": [
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 1.0,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2416.273100010585
+      },
+      {
+        "id": "fault-07",
+        "type": "fault",
+        "question": "空滤压差报警应该检查什么？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 0.3333333333333333,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 2390.444100019522
+      },
+      {
+        "id": "fault-08",
+        "type": "fault",
+        "question": "处置步骤 S-12 包含哪些操作？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 1.0,
+        "coverage": 0.5,
+        "cross_doc": null,
+        "latency_ms": 2368.1125000002794
+      },
+      {
+        "id": "multi-01",
+        "type": "multihop",
+        "question": "设备手册里的 MTBF 和储气罐的作用分别是什么？",
+        "expected_sources": [
+          "fixture_术语混写",
+          "compressed_air_sourcebook"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": false,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 0.5,
+        "precision@5": 0.2,
+        "mrr": 0.25,
+        "coverage": 0.0,
+        "cross_doc": false,
+        "latency_ms": 2398.187400016468
+      },
+      {
+        "id": "multi-02",
+        "type": "multihop",
+        "question": "LUB 的更换周期和空气滤清器的保养方法分别是什么？",
+        "expected_sources": [
+          "fixture_术语混写",
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 0.5,
+        "coverage": 0.5,
+        "cross_doc": true,
+        "latency_ms": 2382.874200004153
+      },
+      {
+        "id": "multi-03",
+        "type": "multihop",
+        "question": "E-05 的含义和排气温度过高的处置步骤分别是什么？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 0.5,
+        "cross_doc": true,
+        "latency_ms": 2420.4523999942467
+      },
+      {
+        "id": "multi-04",
+        "type": "multihop",
+        "question": "ZX-50 的绝缘等级和皮带张紧检查周期分别是多少？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": true,
+        "latency_ms": 2414.1513999784365
+      },
+      {
+        "id": "multi-05",
+        "type": "multihop",
+        "question": "MTBF 的额定值和 CFM 的含义分别是什么？",
+        "expected_sources": [
+          "fixture_术语混写",
+          "compressed_air_sourcebook"
+        ],
+        "top_docs": [
+          "compressed_air_sourcebook_en.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 0.5,
+        "cross_doc": true,
+        "latency_ms": 2384.3839000037406
+      },
+      {
+        "id": "multi-06",
+        "type": "multihop",
+        "question": "无油静音空压机的过滤方式和 ZX-50 的润滑油牌号分别是什么？",
+        "expected_sources": [
+          "无油静音",
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 0.5,
+        "cross_doc": true,
+        "latency_ms": 2393.9222000190057
+      },
+      {
+        "id": "multi-07",
+        "type": "multihop",
+        "question": "receiver tank 的作用和 E-11 的含义分别是什么？",
+        "expected_sources": [
+          "compressed_air_sourcebook",
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": true,
+        "latency_ms": 2373.2286999875214
+      },
+      {
+        "id": "multi-08",
+        "type": "multihop",
+        "question": "ZX-50 的 MTBF 额定值和螺杆压缩机空气滤清器的保养要点分别是什么？",
+        "expected_sources": [
+          "fixture_术语混写",
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 1.0,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": true,
+        "latency_ms": 2447.500000009313
+      },
+      {
+        "id": "multi-09",
+        "type": "multihop",
+        "question": "储气罐压力开关的动作压力和 ZX-50 皮带张紧检查的周期分别是多少？",
+        "expected_sources": [
+          "无油静音",
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 0.5,
+        "cross_doc": true,
+        "latency_ms": 2395.0913999869954
+      },
+      {
+        "id": "multi-10",
+        "type": "multihop",
+        "question": "压缩空气系统 Baselining 的目的和 E-11 报警的含义分别是什么？",
+        "expected_sources": [
+          "compressed_air_sourcebook",
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 0.5,
+        "cross_doc": true,
+        "latency_ms": 2399.297600000864
+      },
+      {
+        "id": "multi-11",
+        "type": "multihop",
+        "question": "CFM 的全称含义和储气罐压力开关的动作压力分别是多少？",
+        "expected_sources": [
+          "compressed_air_sourcebook",
+          "无油静音"
+        ],
+        "top_docs": [
+          "compressed_air_sourcebook_en.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": true,
+        "latency_ms": 2379.9927000072785
+      }
+    ]
+  },
+  "adaptive": {
+    "summary": {
+      "mode": "adaptive",
+      "questions": 40,
+      "hit@1": 0.85,
+      "hit@3": 1.0,
+      "hit@5": 1.0,
+      "hit@10": 1.0,
+      "recall@5": 0.975,
+      "precision@5": 0.47500000000000003,
+      "mrr": 0.9166666666666666,
+      "coverage": 0.875,
+      "cross_doc": 0.9090909090909091,
+      "latency_p50": 29.554100008681417,
+      "latency_p95": 39.42109999479726,
+      "latency_p99": 4804.853999987245,
+      "latency_mean": 150.2567174989963,
+      "by_type": {
+        "fault": {
+          "questions": 8,
+          "hit@5": 1.0,
+          "recall@5": 1.0,
+          "coverage": 0.9375
+        },
+        "multihop": {
+          "questions": 11,
+          "hit@5": 1.0,
+          "recall@5": 0.9545454545454546,
+          "coverage": 0.6818181818181818
+        },
+        "param": {
+          "questions": 7,
+          "hit@5": 1.0,
+          "recall@5": 1.0,
+          "coverage": 1.0
+        },
+        "procedure": {
+          "questions": 7,
+          "hit@5": 1.0,
+          "recall@5": 1.0,
+          "coverage": 0.8571428571428571
+        },
+        "term": {
+          "questions": 7,
+          "hit@5": 1.0,
+          "recall@5": 0.9285714285714286,
+          "coverage": 1.0
+        }
+      }
+    },
+    "rows": [
+      {
+        "id": "term-01",
+        "type": "term",
+        "question": "MTBF 是什么意思？和平均无故障时间是一回事吗？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 57.163799996487796
+      },
+      {
+        "id": "term-02",
+        "type": "term",
+        "question": "LUB 指的是什么油？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 39.25479997997172
+      },
+      {
+        "id": "term-03",
+        "type": "term",
+        "question": "油分芯是什么部件？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 0.3333333333333333,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 31.4426000113599
+      },
+      {
+        "id": "term-04",
+        "type": "term",
+        "question": "air compressor 和空压机是同一种设备吗？",
+        "expected_sources": [
+          "螺杆式空压机",
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 0.5,
+        "precision@5": 0.2,
+        "mrr": 0.5,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 36.2551000143867
+      },
+      {
+        "id": "term-05",
+        "type": "term",
+        "question": "储气罐内气压达到多少 MPa 时压力开关自动关闭电机？",
+        "expected_sources": [
+          "无油静音"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 30.21009999793023
+      },
+      {
+        "id": "term-06",
+        "type": "term",
+        "question": "screw compressor 指什么类型的压缩机？",
+        "expected_sources": [
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 31.278599984943867
+      },
+      {
+        "id": "term-07",
+        "type": "term",
+        "question": "无油静音空气压缩机适用于什么场合？",
+        "expected_sources": [
+          "无油静音"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 1.0,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 25.42749998974614
+      },
+      {
+        "id": "param-01",
+        "type": "param",
+        "question": "LUB 更换的保养周期是多少小时？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 27.960100007476285
+      },
+      {
+        "id": "param-02",
+        "type": "param",
+        "question": "空气过滤器滤芯多久更换一次？对应什么耗材？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 30.117300018901005
+      },
+      {
+        "id": "param-03",
+        "type": "param",
+        "question": "皮带张紧检查的周期是多少？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 26.927200000500306
+      },
+      {
+        "id": "param-04",
+        "type": "param",
+        "question": "ZX-50 机组的 MTBF 额定值是多少小时？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 32.15509999427013
+      },
+      {
+        "id": "param-05",
+        "type": "param",
+        "question": "ZX-50 主电机的绝缘等级是什么？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 27.429900015704334
+      },
+      {
+        "id": "param-06",
+        "type": "param",
+        "question": "TS32S 系列螺杆压缩机是哪个厂家的什么产品？",
+        "expected_sources": [
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 1.0,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 27.85539999604225
+      },
+      {
+        "id": "param-07",
+        "type": "param",
+        "question": "储气罐可以用来控制什么？",
+        "expected_sources": [
+          "compressed_air_sourcebook"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 0.5,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 30.878699995810166
+      },
+      {
+        "id": "proc-01",
+        "type": "procedure",
+        "question": "排气温度过高应该按什么步骤处理？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 25.57389999856241
+      },
+      {
+        "id": "proc-02",
+        "type": "procedure",
+        "question": "E-05 报警的处理步骤编号是什么？第一步做什么？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 29.554100008681417
+      },
+      {
+        "id": "proc-03",
+        "type": "procedure",
+        "question": "空气滤清器应该如何保养？",
+        "expected_sources": [
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.8,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 25.480400014203042
+      },
+      {
+        "id": "proc-04",
+        "type": "procedure",
+        "question": "最小压力止回阀的保养要注意什么？",
+        "expected_sources": [
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 23.650200018892065
+      },
+      {
+        "id": "proc-05",
+        "type": "procedure",
+        "question": "日常巡检每天需要记录哪些数据？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "compressed_air_sourcebook_en.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 28.07049997500144
+      },
+      {
+        "id": "proc-06",
+        "type": "procedure",
+        "question": "空压机吸气口的空气过滤器有什么作用？",
+        "expected_sources": [
+          "无油静音"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 28.105200006393716
+      },
+      {
+        "id": "proc-07",
+        "type": "procedure",
+        "question": "压缩空气系统 Baselining（基线测量）的目的是什么？",
+        "expected_sources": [
+          "compressed_air_sourcebook"
+        ],
+        "top_docs": [
+          "compressed_air_sourcebook_en.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 0.0,
+        "cross_doc": null,
+        "latency_ms": 31.055100000230595
+      },
+      {
+        "id": "fault-01",
+        "type": "fault",
+        "question": "报错 E05 是什么含义？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 25.790000014239922
+      },
+      {
+        "id": "fault-02",
+        "type": "fault",
+        "question": "故障码 E-01 代表什么问题？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 23.119399993447587
+      },
+      {
+        "id": "fault-03",
+        "type": "fault",
+        "question": "E-11 报警是什么原因？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 25.399799982551485
+      },
+      {
+        "id": "fault-04",
+        "type": "fault",
+        "question": "空压机报错代码 E-05 怎么处理？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 28.382100019371137
+      },
+      {
+        "id": "fault-05",
+        "type": "fault",
+        "question": "固件历史版本中 E-05 曾显示为什么代码？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 25.982099992688745
+      },
+      {
+        "id": "fault-06",
+        "type": "fault",
+        "question": "螺杆压缩机的故障分析与排除内容在哪一章？",
+        "expected_sources": [
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 0.5,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 27.293699997244403
+      },
+      {
+        "id": "fault-07",
+        "type": "fault",
+        "question": "空滤压差报警应该检查什么？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": null,
+        "latency_ms": 26.526100002229214
+      },
+      {
+        "id": "fault-08",
+        "type": "fault",
+        "question": "处置步骤 S-12 包含哪些操作？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.2,
+        "mrr": 1.0,
+        "coverage": 0.5,
+        "cross_doc": null,
+        "latency_ms": 27.4273999966681
+      },
+      {
+        "id": "multi-01",
+        "type": "multihop",
+        "question": "设备手册里的 MTBF 和储气罐的作用分别是什么？",
+        "expected_sources": [
+          "fixture_术语混写",
+          "compressed_air_sourcebook"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 0.5,
+        "precision@5": 0.2,
+        "mrr": 0.3333333333333333,
+        "coverage": 0.0,
+        "cross_doc": false,
+        "latency_ms": 35.10079998522997
+      },
+      {
+        "id": "multi-02",
+        "type": "multihop",
+        "question": "LUB 的更换周期和空气滤清器的保养方法分别是什么？",
+        "expected_sources": [
+          "fixture_术语混写",
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.8,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": true,
+        "latency_ms": 32.05139999045059
+      },
+      {
+        "id": "multi-03",
+        "type": "multihop",
+        "question": "E-05 的含义和排气温度过高的处置步骤分别是什么？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 0.5,
+        "cross_doc": true,
+        "latency_ms": 27.742100006435066
+      },
+      {
+        "id": "multi-04",
+        "type": "multihop",
+        "question": "ZX-50 的绝缘等级和皮带张紧检查周期分别是多少？",
+        "expected_sources": [
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": true,
+        "latency_ms": 31.960499996785074
+      },
+      {
+        "id": "multi-05",
+        "type": "multihop",
+        "question": "MTBF 的额定值和 CFM 的含义分别是什么？",
+        "expected_sources": [
+          "fixture_术语混写",
+          "compressed_air_sourcebook"
+        ],
+        "top_docs": [
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": false,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 0.5,
+        "coverage": 0.0,
+        "cross_doc": true,
+        "latency_ms": 34.55399998347275
+      },
+      {
+        "id": "multi-06",
+        "type": "multihop",
+        "question": "无油静音空压机的过滤方式和 ZX-50 的润滑油牌号分别是什么？",
+        "expected_sources": [
+          "无油静音",
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 0.5,
+        "cross_doc": true,
+        "latency_ms": 38.91770000336692
+      },
+      {
+        "id": "multi-07",
+        "type": "multihop",
+        "question": "receiver tank 的作用和 E-11 的含义分别是什么？",
+        "expected_sources": [
+          "compressed_air_sourcebook",
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "compressed_air_sourcebook_en.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": true,
+        "latency_ms": 4804.853999987245
+      },
+      {
+        "id": "multi-08",
+        "type": "multihop",
+        "question": "ZX-50 的 MTBF 额定值和螺杆压缩机空气滤清器的保养要点分别是什么？",
+        "expected_sources": [
+          "fixture_术语混写",
+          "螺杆式空压机"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 1.0,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": true,
+        "latency_ms": 39.42109999479726
+      },
+      {
+        "id": "multi-09",
+        "type": "multihop",
+        "question": "储气罐压力开关的动作压力和 ZX-50 皮带张紧检查的周期分别是多少？",
+        "expected_sources": [
+          "无油静音",
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "fixture_术语混写_模拟维保手册.md",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.8,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": true,
+        "latency_ms": 33.59790000831708
+      },
+      {
+        "id": "multi-10",
+        "type": "multihop",
+        "question": "压缩空气系统 Baselining 的目的和 E-11 报警的含义分别是什么？",
+        "expected_sources": [
+          "compressed_air_sourcebook",
+          "fixture_术语混写"
+        ],
+        "top_docs": [
+          "fixture_术语混写_模拟维保手册.md",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.4,
+        "mrr": 1.0,
+        "coverage": 0.5,
+        "cross_doc": true,
+        "latency_ms": 37.67449999577366
+      },
+      {
+        "id": "multi-11",
+        "type": "multihop",
+        "question": "CFM 的全称含义和储气罐压力开关的动作压力分别是多少？",
+        "expected_sources": [
+          "compressed_air_sourcebook",
+          "无油静音"
+        ],
+        "top_docs": [
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "compressed_air_sourcebook_en.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf",
+          "无油静音空压机操作说明_厂商公开.pdf",
+          "螺杆式空压机操作手册_厂商公开.pdf"
+        ],
+        "hit@1": true,
+        "hit@3": true,
+        "hit@5": true,
+        "hit@10": true,
+        "recall@5": 1.0,
+        "precision@5": 0.6,
+        "mrr": 1.0,
+        "coverage": 1.0,
+        "cross_doc": true,
+        "latency_ms": 38.62849998404272
+      }
+    ]
+  }
+}

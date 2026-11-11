@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 840" width="1280" height="840" role="img" aria-label="工阅 IndocQA 系统架构图">
+  <defs>
+    <style>
+      .canvas { fill: #f8fafc; }
+      .title { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 30px; font-weight: 700; fill: #0f172a; }
+      .subtitle { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 14px; fill: #64748b; }
+      .layer-label { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 13px; font-weight: 700; fill: #0f766e; letter-spacing: 1px; }
+      .box { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.2; }
+      .box-soft { fill: #f0fdfa; stroke: #99f6e4; stroke-width: 1.2; }
+      .box-dark { fill: #0f172a; stroke: #0f172a; }
+      .box-title { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
+      .box-title-light { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 15px; font-weight: 700; fill: #ffffff; }
+      .box-sub { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 11.5px; fill: #475569; }
+      .box-sub-light { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 11.5px; fill: #cbd5e1; }
+      .group { fill: none; stroke: #94a3b8; stroke-width: 1.2; stroke-dasharray: 6 5; }
+      .flow { stroke: #0f9d94; stroke-width: 2; fill: none; }
+      .flow-soft { stroke: #94a3b8; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+      .footer { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 12px; fill: #64748b; }
+      .tag { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 10.5px; font-weight: 700; fill: #0f766e; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0f9d94"/>
+    </marker>
+    <marker id="arrow-soft" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect class="canvas" x="0" y="0" width="1280" height="840"/>
+
+  <text class="title" x="48" y="58">工阅 IndocQA · 自适应检索问答系统架构</text>
+  <text class="subtitle" x="48" y="84">面向工业技术文档：检索策略随问题类型自动切换，回答可溯源、可解释、可复现</text>
+
+  <!-- 用户层 -->
+  <text class="layer-label" x="48" y="122">用户层 / WEB</text>
+  <rect class="box" x="48" y="134" width="278" height="66" rx="12"/>
+  <text class="box-title" x="66" y="162">问答工作台</text>
+  <text class="box-sub" x="66" y="184">多轮会话 · SSE 流式 · 打字机输出</text>
+
+  <rect class="box" x="342" y="134" width="278" height="66" rx="12"/>
+  <text class="box-title" x="360" y="162">知识库管理</text>
+  <text class="box-sub" x="360" y="184">上传预检 · 目录树 · AI 分类</text>
+
+  <rect class="box" x="636" y="134" width="278" height="66" rx="12"/>
+  <text class="box-title" x="654" y="162">可解释交互</text>
+  <text class="box-sub" x="654" y="184">引用面板 · 执行链 · 置信度</text>
+
+  <rect class="box" x="930" y="134" width="302" height="66" rx="12"/>
+  <text class="box-title" x="948" y="162">结果复用</text>
+  <text class="box-sub" x="948" y="184">复制 Markdown / TXT · 结构化 JSON</text>
+
+  <!-- 接入层 -->
+  <text class="layer-label" x="48" y="238">接入层 / API</text>
+  <rect class="box-dark" x="48" y="250" width="1184" height="72" rx="14"/>
+  <text class="box-title-light" x="70" y="278">FastAPI 统一接入</text>
+  <text class="box-sub-light" x="70" y="302">/api/chat（SSE） · /api/kb/* · /api/sessions · 参数校验 · 输入安全过滤 · 流式/检索超时治理</text>
+
+  <!-- RAG 内核 -->
+  <rect class="group" x="48" y="348" width="1184" height="286" rx="16"/>
+  <text class="layer-label" x="68" y="376">RAG 内核 / LANGGRAPH</text>
+
+  <!-- 检索列 -->
+  <rect class="box-soft" x="68" y="392" width="352" height="52" rx="10"/>
+  <text class="box-title" x="84" y="414">① 意图分类</text>
+  <text class="box-sub" x="84" y="433">term / param / procedure / fault / multihop</text>
+
+  <rect class="box-soft" x="68" y="458" width="352" height="52" rx="10"/>
+  <text class="box-title" x="84" y="480">② 策略路由 + 查询改写</text>
+  <text class="box-sub" x="84" y="499">混合 / 关键词 / 表格加权 · 术语归一 · 多跳规划</text>
+
+  <rect class="box-soft" x="68" y="524" width="352" height="52" rx="10"/>
+  <text class="box-title" x="84" y="546">③ 混合检索 + 融合排序</text>
+  <text class="box-sub" x="84" y="565">向量召回 + BM25 → RRF → 去重多样化</text>
+
+  <!-- 上下文列 -->
+  <rect class="box-soft" x="452" y="392" width="352" height="52" rx="10"/>
+  <text class="box-title" x="468" y="414">④ 三级去重</text>
+  <text class="box-sub" x="468" y="433">精确哈希 / SimHash+Jaccard / 语义向量</text>
+
+  <rect class="box-soft" x="452" y="458" width="352" height="52" rx="10"/>
+  <text class="box-title" x="468" y="480">⑤ 噪声过滤 + 权重评分</text>
+  <text class="box-sub" x="468" y="499">规则清洗 · 分层配额 · 相关性排序</text>
+
+  <rect class="box-soft" x="452" y="524" width="352" height="52" rx="10"/>
+  <text class="box-title" x="468" y="546">⑥ 预算裁剪 + 模板约束</text>
+  <text class="box-sub" x="468" y="565">硬 Token 预算 · 版本化模板 · 单元级溯源</text>
+
+  <!-- 生成列 -->
+  <rect class="box-soft" x="836" y="392" width="376" height="52" rx="10"/>
+  <text class="box-title" x="852" y="414">⑦ 多模型网关</text>
+  <text class="box-sub" x="852" y="433">主模型 → 备用 → 扩展 profile · 空闲超时切换</text>
+
+  <rect class="box-soft" x="836" y="458" width="376" height="52" rx="10"/>
+  <text class="box-title" x="852" y="480">⑧ 约束生成</text>
+  <text class="box-sub" x="852" y="499">固定温度/长度 · 引用强制 · 事实句审计</text>
+
+  <rect class="box-soft" x="836" y="524" width="376" height="52" rx="10"/>
+  <text class="box-title" x="852" y="546">⑨ 安全与格式</text>
+  <text class="box-sub" x="852" y="565">PII/凭据脱敏 · Markdown/KaTeX · 标准 JSON</text>
+
+  <!-- 请求流 -->
+  <path class="flow" d="M 187 200 L 187 250" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 640 322 L 640 348" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 420 550 L 452 550" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 804 550 L 836 550" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 68 550 L 48 550 L 48 286" marker-end="url(#arrow)"/>
+  <path class="flow" d="M 1024 550 L 1210 550 L 1210 322" marker-end="url(#arrow)"/>
+  <text class="tag" x="430" y="540">候选证据</text>
+  <text class="tag" x="812" y="540">组装上下文</text>
+
+  <!-- 数据层 -->
+  <text class="layer-label" x="48" y="674">数据与模型层</text>
+  <rect class="box" x="48" y="686" width="184" height="76" rx="12"/>
+  <text class="box-title" x="64" y="714">Chroma</text>
+  <text class="box-sub" x="64" y="736">向量索引 · 父块</text>
+
+  <rect class="box" x="248" y="686" width="184" height="76" rx="12"/>
+  <text class="box-title" x="264" y="714">BM25 + 术语簇</text>
+  <text class="box-sub" x="264" y="736">jieba 分词 · 别名归一</text>
+
+  <rect class="box" x="448" y="686" width="184" height="76" rx="12"/>
+  <text class="box-title" x="464" y="714">SQLite</text>
+  <text class="box-sub" x="464" y="736">会话 / 消息 / task_state</text>
+
+  <rect class="box" x="648" y="686" width="184" height="76" rx="12"/>
+  <text class="box-title" x="664" y="714">Manifest</text>
+  <text class="box-sub" x="664" y="736">文档元数据 · 目录 · 哈希</text>
+
+  <rect class="box" x="848" y="686" width="184" height="76" rx="12"/>
+  <text class="box-title" x="864" y="714">嵌入模型</text>
+  <text class="box-sub" x="864" y="736">Ollama bge-m3 / 本地</text>
+
+  <rect class="box" x="1048" y="686" width="184" height="76" rx="12"/>
+  <text class="box-title" x="1064" y="714">LLM 供应商</text>
+  <text class="box-sub" x="1064" y="736">主 / 备 / 多 profile</text>
+
+  <path class="flow-soft" d="M 240 634 L 240 686" marker-end="url(#arrow-soft)"/>
+  <path class="flow-soft" d="M 640 634 L 640 686" marker-end="url(#arrow-soft)"/>
+  <path class="flow-soft" d="M 1024 634 L 1024 686" marker-end="url(#arrow-soft)"/>
+
+  <text class="footer" x="48" y="802">实线：请求链路（用户 → API → 检索 → 上下文 → 生成 → SSE 返回）　虚线：数据与模型依赖　·　指标与复现方式见 docs/performance/</text>
+</svg>

@@ -1,0 +1,239 @@
+{
+  "environment": {
+    "timestamp": "2026-11-11T13:45:00",
+    "git_commit": "6eb1344",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.2",
+    "cpu": "AMD64 Family 25 Model 117 Stepping 2, AuthenticAMD",
+    "cpu_count": 16,
+    "memory_gb": 31.3,
+    "health": {
+      "status": "ok",
+      "version": "0.1.0",
+      "kb": {
+        "documents": 4,
+        "chunks": 414,
+        "state": "ready"
+      },
+      "llm": {
+        "configured": true,
+        "reachable": null
+      },
+      "embedding": {
+        "mode": "auto",
+        "backend": "ollama-bge-m3",
+        "model": "bge-m3"
+      }
+    },
+    "embedding": {
+      "mode": "auto",
+      "backend": "ollama-bge-m3",
+      "model": "bge-m3"
+    },
+    "llm_model": "qwen3.8-27b",
+    "profile": "primary",
+    "models": [
+      {
+        "id": "primary",
+        "model": "qwen3.8-27b"
+      },
+      {
+        "id": "profile2",
+        "model": "kimi-k3"
+      },
+      {
+        "id": "profile3",
+        "model": "kimi-k3.1-pro"
+      }
+    ],
+    "dataset_size": 40,
+    "base_url": "http://127.0.0.1:8010"
+  },
+  "retrieval": {
+    "fixed": {
+      "mode": "fixed",
+      "questions": 40,
+      "hit@1": 0.75,
+      "hit@3": 0.925,
+      "hit@5": 1.0,
+      "hit@10": 1.0,
+      "recall@5": 0.975,
+      "precision@5": 0.46,
+      "mrr": 0.8395833333333333,
+      "coverage": 0.825,
+      "cross_doc": 0.9090909090909091,
+      "latency_p50": 2409.536000021035,
+      "latency_p95": 2522.281400015345,
+      "latency_p99": 2543.2423999882303,
+      "latency_mean": 2420.6205325004703,
+      "by_type": {
+        "fault": {
+          "questions": 8,
+          "hit@5": 1.0,
+          "recall@5": 1.0,
+          "coverage": 0.9375
+        },
+        "multihop": {
+          "questions": 11,
+          "hit@5": 1.0,
+          "recall@5": 0.9545454545454546,
+          "coverage": 0.6363636363636364
+        },
+        "param": {
+          "questions": 7,
+          "hit@5": 1.0,
+          "recall@5": 1.0,
+          "coverage": 0.8571428571428571
+        },
+        "procedure": {
+          "questions": 7,
+          "hit@5": 1.0,
+          "recall@5": 1.0,
+          "coverage": 0.8571428571428571
+        },
+        "term": {
+          "questions": 7,
+          "hit@5": 1.0,
+          "recall@5": 0.9285714285714286,
+          "coverage": 0.9285714285714286
+        }
+      }
+    },
+    "adaptive": {
+      "mode": "adaptive",
+      "questions": 40,
+      "hit@1": 0.85,
+      "hit@3": 1.0,
+      "hit@5": 1.0,
+      "hit@10": 1.0,
+      "recall@5": 0.975,
+      "precision@5": 0.47500000000000003,
+      "mrr": 0.9166666666666666,
+      "coverage": 0.875,
+      "cross_doc": 0.9090909090909091,
+      "latency_p50": 29.554100008681417,
+      "latency_p95": 39.42109999479726,
+      "latency_p99": 4804.853999987245,
+      "latency_mean": 150.2567174989963,
+      "by_type": {
+        "fault": {
+          "questions": 8,
+          "hit@5": 1.0,
+          "recall@5": 1.0,
+          "coverage": 0.9375
+        },
+        "multihop": {
+          "questions": 11,
+          "hit@5": 1.0,
+          "recall@5": 0.9545454545454546,
+          "coverage": 0.6818181818181818
+        },
+        "param": {
+          "questions": 7,
+          "hit@5": 1.0,
+          "recall@5": 1.0,
+          "coverage": 1.0
+        },
+        "procedure": {
+          "questions": 7,
+          "hit@5": 1.0,
+          "recall@5": 1.0,
+          "coverage": 0.8571428571428571
+        },
+        "term": {
+          "questions": 7,
+          "hit@5": 1.0,
+          "recall@5": 0.9285714285714286,
+          "coverage": 1.0
+        }
+      }
+    }
+  },
+  "ingest": {
+    "documents": 4,
+    "total_chars": 240555,
+    "total_chunks": 1013,
+    "total_seconds": 303.73425149996183,
+    "docs_per_min": 0.7901644243768476,
+    "chars_per_sec": 791.9916796082191,
+    "chunks_per_sec": 3.335152341223944,
+    "preview_p50_ms": 30.701300012879074,
+    "preview_p95_ms": 53.21770001319237,
+    "ingest_p50_ms": 42653.80569998524,
+    "ingest_p95_ms": 168308.15399999847
+  },
+  "chat": {
+    "requests": 10,
+    "success": 10,
+    "success_rate": 1.0,
+    "models_used": {
+      "kimi-k3": 10
+    },
+    "ttft_p50_ms": 17544.191299995873,
+    "ttft_p95_ms": 61825.01760000014,
+    "ttft_mean_ms": 26972.758620002423,
+    "total_p50_ms": 17561.6757000098,
+    "total_p95_ms": 61839.79170001112,
+    "total_mean_ms": 26994.22603000421,
+    "cps_p50": 7376.76319461857,
+    "cps_p95": 24386.61368142336,
+    "cps_mean": 9443.856576148506,
+    "citation_rate": 0.7,
+    "answer_points_coverage": 0.75
+  },
+  "concurrency": [
+    {
+      "concurrency": 1,
+      "tasks": 4,
+      "success": 4,
+      "success_rate": 1.0,
+      "wall_seconds": 101.44044909998775,
+      "qps": 0.039432002080918266,
+      "total_p50_ms": 24049.816900020232,
+      "total_p95_ms": 28495.499699987704,
+      "ttft_p50_ms": 24030.693600012455,
+      "ttft_p95_ms": 28479.593899974134,
+      "errors": []
+    },
+    {
+      "concurrency": 2,
+      "tasks": 4,
+      "success": 4,
+      "success_rate": 1.0,
+      "wall_seconds": 72.63571679999586,
+      "qps": 0.05506932644464834,
+      "total_p50_ms": 24514.45160000003,
+      "total_p95_ms": 47999.59629998193,
+      "ttft_p50_ms": 24495.451499999035,
+      "ttft_p95_ms": 47982.547599996906,
+      "errors": []
+    },
+    {
+      "concurrency": 4,
+      "tasks": 4,
+      "success": 4,
+      "success_rate": 1.0,
+      "wall_seconds": 46.51039119999041,
+      "qps": 0.08600228673202011,
+      "total_p50_ms": 30098.588199994992,
+      "total_p95_ms": 46420.41160000372,
+      "ttft_p50_ms": 30080.53989999462,
+      "ttft_p95_ms": 46399.1595999978,
+      "errors": []
+    }
+  ],
+  "resources": {
+    "samples": 433,
+    "cpu_avg": 0.0,
+    "cpu_max": 0.0,
+    "rss_avg_mb": 76.41233941974596,
+    "rss_max_mb": 76.41796875
+  },
+  "charts": [
+    "D:\\Project\\WorkBuddy\\project\\work-1\\indocqa-szccf\\docs\\performance\\charts\\chart-retrieval-quality.png",
+    "D:\\Project\\WorkBuddy\\project\\work-1\\indocqa-szccf\\docs\\performance\\charts\\chart-recall-by-type.png",
+    "D:\\Project\\WorkBuddy\\project\\work-1\\indocqa-szccf\\docs\\performance\\charts\\chart-latency.png",
+    "D:\\Project\\WorkBuddy\\project\\work-1\\indocqa-szccf\\docs\\performance\\charts\\chart-ingest.png",
+    "D:\\Project\\WorkBuddy\\project\\work-1\\indocqa-szccf\\docs\\performance\\charts\\chart-concurrency.png"
+  ]
+}

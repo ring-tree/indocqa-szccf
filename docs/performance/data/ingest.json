@@ -1,0 +1,73 @@
+{
+  "summary": {
+    "documents": 4,
+    "total_chars": 240555,
+    "total_chunks": 1013,
+    "total_seconds": 303.73425149996183,
+    "docs_per_min": 0.7901644243768476,
+    "chars_per_sec": 791.9916796082191,
+    "chunks_per_sec": 3.335152341223944,
+    "preview_p50_ms": 30.701300012879074,
+    "preview_p95_ms": 53.21770001319237,
+    "ingest_p50_ms": 42653.80569998524,
+    "ingest_p95_ms": 168308.15399999847
+  },
+  "rows": [
+    {
+      "filename": "perf_ingest_1_8k.md",
+      "chars": 8387,
+      "bytes": 18305,
+      "pages": null,
+      "chunks": 36,
+      "tables": 7,
+      "preview_ms": 24.604099977295846,
+      "ingest_ms": 13193.481299997075,
+      "index_ms": 13168.877200019779,
+      "chars_per_sec": 635.6927189491571,
+      "chunks_per_sec": 2.728620231569054,
+      "duplicated": false
+    },
+    {
+      "filename": "perf_ingest_2_32k.md",
+      "chars": 33224,
+      "bytes": 71984,
+      "pages": null,
+      "chunks": 142,
+      "tables": 28,
+      "preview_ms": 30.701300012879074,
+      "ingest_ms": 42653.80569998524,
+      "index_ms": 42623.10439997236,
+      "chars_per_sec": 778.9222896941056,
+      "chunks_per_sec": 3.3291284955623346,
+      "duplicated": false
+    },
+    {
+      "filename": "perf_ingest_3_64k.md",
+      "chars": 66384,
+      "bytes": 142518,
+      "pages": null,
+      "chunks": 280,
+      "tables": 56,
+      "preview_ms": 50.80180001095869,
+      "ingest_ms": 79578.81049998105,
+      "index_ms": 79528.00869997009,
+      "chars_per_sec": 834.1919109235217,
+      "chunks_per_sec": 3.5185245700558276,
+      "duplicated": false
+    },
+    {
+      "filename": "perf_ingest_4_128k.md",
+      "chars": 132560,
+      "bytes": 283374,
+      "pages": null,
+      "chunks": 555,
+      "tables": 111,
+      "preview_ms": 53.21770001319237,
+      "ingest_ms": 168308.15399999847,
+      "index_ms": 168254.93629998527,
+      "chars_per_sec": 787.6029583213253,
+      "chunks_per_sec": 3.29752294710573,
+      "duplicated": false
+    }
+  ]
+}

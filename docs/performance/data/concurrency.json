@@ -1,0 +1,50 @@
+{
+  "levels": [
+    {
+      "concurrency": 1,
+      "tasks": 4,
+      "success": 4,
+      "success_rate": 1.0,
+      "wall_seconds": 101.44044909998775,
+      "qps": 0.039432002080918266,
+      "total_p50_ms": 24049.816900020232,
+      "total_p95_ms": 28495.499699987704,
+      "ttft_p50_ms": 24030.693600012455,
+      "ttft_p95_ms": 28479.593899974134,
+      "errors": []
+    },
+    {
+      "concurrency": 2,
+      "tasks": 4,
+      "success": 4,
+      "success_rate": 1.0,
+      "wall_seconds": 72.63571679999586,
+      "qps": 0.05506932644464834,
+      "total_p50_ms": 24514.45160000003,
+      "total_p95_ms": 47999.59629998193,
+      "ttft_p50_ms": 24495.451499999035,
+      "ttft_p95_ms": 47982.547599996906,
+      "errors": []
+    },
+    {
+      "concurrency": 4,
+      "tasks": 4,
+      "success": 4,
+      "success_rate": 1.0,
+      "wall_seconds": 46.51039119999041,
+      "qps": 0.08600228673202011,
+      "total_p50_ms": 30098.588199994992,
+      "total_p95_ms": 46420.41160000372,
+      "ttft_p50_ms": 30080.53989999462,
+      "ttft_p95_ms": 46399.1595999978,
+      "errors": []
+    }
+  ],
+  "resources": {
+    "samples": 433,
+    "cpu_avg": 0.0,
+    "cpu_max": 0.0,
+    "rss_avg_mb": 76.41233941974596,
+    "rss_max_mb": 76.41796875
+  }
+}
