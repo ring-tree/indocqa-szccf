@@ -28,32 +28,40 @@ class LLMGateway:
         self.settings = settings
         self.providers: list[dict] = []
         self.disable_thinking = settings.llm_disable_thinking
-        for pid, base, key, model, primary in (
-            (
-                "primary",
-                settings.llm_base_url,
-                settings.llm_api_key,
-                settings.llm_model,
-                True,
-            ),
-            (
-                "backup",
-                settings.llm_backup_base_url,
-                settings.llm_backup_api_key,
-                settings.llm_backup_model,
-                False,
-            ),
-        ):
-            if base and _usable_key(key) and model:
-                self.providers.append(
-                    {
-                        "id": pid,
-                        "base": base.rstrip("/"),
-                        "key": key,
-                        "model": model,
-                        "primary": primary,
-                    }
-                )
+        self._seen: set[tuple[str, str, str]] = set()
+
+        def add_provider(pid: str, base: str, key: str, model: str) -> None:
+            if not (base and _usable_key(key) and model):
+                return
+            signature = (base.rstrip("/"), key, model)
+            if signature in self._seen:
+                return
+            self._seen.add(signature)
+            self.providers.append(
+                {
+                    "id": pid,
+                    "base": base.rstrip("/"),
+                    "key": key,
+                    "model": model,
+                    # 第一个可用供应商作为主供应商，后续依次作为故障切换候选
+                    "primary": not self.providers,
+                }
+            )
+
+        add_provider("primary", settings.llm_base_url, settings.llm_api_key, settings.llm_model)
+        add_provider(
+            "backup",
+            settings.llm_backup_base_url,
+            settings.llm_backup_api_key,
+            settings.llm_backup_model,
+        )
+        for index, item in enumerate(getattr(settings, "llm_profiles", []) or [], start=1):
+            add_provider(
+                str(item.get("id") or f"profile{index}"),
+                str(item.get("base_url") or ""),
+                str(item.get("api_key") or ""),
+                str(item.get("model") or ""),
+            )
         self.profile = profile if profile in {p["id"] for p in self.providers} else None
         self.last_profile: str | None = None
         self.last_model: str | None = None

@@ -1,12 +1,16 @@
 """应用配置：全部来自环境变量（前缀 INDOCQA_），见 server/.env.example。"""
 
+import os
+import re
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from dotenv import dotenv_values
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SERVER_ROOT = Path(__file__).resolve().parents[2]
+_PROFILE_ENV = re.compile(r"^INDOCQA_LLM_PROFILE_(\d+)_(BASE_URL|API_KEY|MODEL|NAME)$")
 
 
 class Settings(BaseSettings):
@@ -37,6 +41,9 @@ class Settings(BaseSettings):
     llm_backup_base_url: str = ""
     llm_backup_api_key: str = ""
     llm_backup_model: str = ""
+    # 任意多套额外模型：INDOCQA_LLM_PROFILE_<N>_{BASE_URL,API_KEY,MODEL,NAME}
+    # 由 model_validator 从 .env / 环境变量聚合，不需要为每套声明字段
+    llm_profiles: list[dict] = Field(default_factory=list, repr=False, exclude=True)
     # 思考型模型（qwen3 系）关闭思考阶段以降低首 token 延迟；仅注入主供应商请求
     llm_disable_thinking: bool = True
     # 生成参数固化：温度、最大生成长度（结构化模式单独设定，保证 JSON 完整）
@@ -101,6 +108,48 @@ class Settings(BaseSettings):
     context_template_version: str = "1"
     context_trace_persist: bool = True
     context_persona_enabled: bool = True
+
+    @model_validator(mode="after")
+    def _collect_llm_profiles(self):
+        """聚合 INDOCQA_LLM_PROFILE_<N>_*，支持任意多套模型配置。"""
+        values: dict[str, str] = {}
+        env_file = SERVER_ROOT / ".env"
+        if env_file.exists():
+            try:
+                values.update(
+                    {
+                        key: value
+                        for key, value in dotenv_values(env_file).items()
+                        if value is not None
+                    }
+                )
+            except (OSError, ValueError):
+                pass
+        values.update(
+            {key: value for key, value in os.environ.items() if key.startswith("INDOCQA_")}
+        )
+        grouped: dict[int, dict[str, str]] = {}
+        for key, value in values.items():
+            match = _PROFILE_ENV.match(key)
+            if not match:
+                continue
+            index, field_name = int(match.group(1)), match.group(2).lower()
+            grouped.setdefault(index, {})[field_name] = str(value).strip()
+        profiles = []
+        for index in sorted(grouped):
+            item = grouped[index]
+            if item.get("base_url") and item.get("api_key") and item.get("model"):
+                profiles.append(
+                    {
+                        "id": f"profile{index}",
+                        "base_url": item["base_url"],
+                        "api_key": item["api_key"],
+                        "model": item["model"],
+                        "name": item.get("name") or item["model"],
+                    }
+                )
+        self.llm_profiles = profiles
+        return self
 
 
 @lru_cache

@@ -225,6 +225,40 @@ def test_gateway_public_api_rejects_numeric_overrides():
         assert "max_tokens" not in params
 
 
+def test_gateway_supports_numbered_model_profiles():
+    settings = Settings(
+        llm_base_url="http://localhost:9/v1",
+        llm_api_key="sk-abcdefghijklmnop",
+        llm_model="model-1",
+    )
+    settings.llm_profiles = [
+        {
+            "id": "profile2",
+            "base_url": "http://localhost:9/v1",
+            "api_key": "sk-abcdefghijklmnop",
+            "model": "model-2",
+            "name": "model-2",
+        },
+        {
+            "id": "profile3",
+            "base_url": "http://localhost:9/v1",
+            "api_key": "sk-abcdefghijklmnop",
+            "model": "model-3",
+            "name": "model-3",
+        },
+    ]
+    gateway = LLMGateway(settings)
+    ids = [provider["id"] for provider in gateway.providers]
+    assert "primary" in ids
+    assert "profile2" in ids and "profile3" in ids
+    assert gateway.profiles() == [
+        {"id": "primary", "model": "model-1"},
+        {"id": "profile2", "model": "model-2"},
+        {"id": "profile3", "model": "model-3"},
+    ]
+    assert LLMGateway(settings, "profile3").profile == "profile3"
+
+
 def test_build_context_keeps_source_locator():
     value = answerer.build_context([hit("LUB 更换周期为 4000 小时。")])
     assert value.startswith("[1] 维保手册.md · 1. 保养周期")
