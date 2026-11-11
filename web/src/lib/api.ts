@@ -1,5 +1,6 @@
 import { postSSE } from "./sse";
 import type {
+  AttachmentInfo,
   ChatMode,
   ClassificationResult,
   DonePayload,
@@ -11,6 +12,9 @@ import type {
   Session,
   Source,
   TraceStep,
+  UploadChunkResult,
+  UploadInit,
+  UploadStatus,
 } from "./types";
 
 interface ChatCallbacks {
@@ -30,6 +34,7 @@ export async function sendChat(
   profile?: string | null,
   folder?: string | null,
   folders?: string[] | null,
+  attachmentIds?: string[] | null,
 ): Promise<void> {
   await postSSE(
     "/api/chat",
@@ -40,6 +45,7 @@ export async function sendChat(
       ...(profile ? { profile } : {}),
       ...(folder ? { folder } : {}),
       ...(folders && folders.length > 0 ? { folders } : {}),
+      ...(attachmentIds && attachmentIds.length > 0 ? { attachmentIds } : {}),
     },
     (ev) => {
       const data = ev.data as Record<string, unknown>;
@@ -60,18 +66,185 @@ export async function sendChat(
   );
 }
 
+type CodedError = Error & { code?: number };
+
 async function jsonOrThrow<T>(resp: Response): Promise<T> {
   if (!resp.ok) {
     let message = `HTTP ${resp.status}`;
+    let code: number | undefined;
     try {
       const body = await resp.json();
       message = body?.error?.message ?? message;
+      code = body?.error?.code;
     } catch {
       /* 非 JSON 错误体 */
     }
-    throw new Error(message);
+    const error = new Error(message) as CodedError;
+    error.code = code;
+    throw error;
   }
   return (await resp.json()) as T;
+}
+
+function chunkError(xhr: XMLHttpRequest): CodedError {
+  let message = `HTTP ${xhr.status}`;
+  let code: number | undefined;
+  try {
+    const body = JSON.parse(xhr.responseText);
+    message = body?.error?.message ?? message;
+    code = body?.error?.code;
+  } catch {
+    /* 非 JSON 错误体 */
+  }
+  const error = new Error(message) as CodedError;
+  error.code = code;
+  return error;
+}
+
+export async function initUpload(payload: {
+  sessionId?: string | null;
+  filename: string;
+  size: number;
+  mime?: string;
+}): Promise<UploadInit> {
+  const body = await jsonOrThrow<{ data: UploadInit }>(
+    await fetch("/api/uploads/init", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...(payload.sessionId ? { sessionId: payload.sessionId } : {}),
+        filename: payload.filename,
+        size: payload.size,
+        ...(payload.mime ? { mime: payload.mime } : {}),
+      }),
+    }),
+  );
+  return body.data;
+}
+
+export function uploadChunk(
+  uploadId: string,
+  index: number,
+  chunk: Blob,
+  sessionId: string,
+  onProgress: (ratio: number) => void,
+  signal?: AbortSignal,
+): Promise<UploadChunkResult> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let settled = false;
+    const cleanup = () => {
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      fn();
+    };
+    const onAbort = () => xhr.abort();
+    xhr.open(
+      "PUT",
+      `/api/uploads/${encodeURIComponent(uploadId)}/chunks/${index}?sessionId=${encodeURIComponent(sessionId)}`,
+    );
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.timeout = 120_000;
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const body = JSON.parse(xhr.responseText) as { data: UploadChunkResult };
+          finish(() => resolve(body.data));
+        } catch {
+          finish(() => reject(new Error("上传响应解析失败")));
+        }
+      } else {
+        finish(() => reject(chunkError(xhr)));
+      }
+    };
+    xhr.onerror = () => finish(() => reject(new Error("网络中断，上传已暂停")));
+    xhr.ontimeout = () => finish(() => reject(new Error("分片上传超时")));
+    xhr.onabort = () => {
+      const error = new Error("上传已取消") as CodedError;
+      error.name = "AbortError";
+      finish(() => reject(error));
+    };
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+    xhr.send(chunk);
+  });
+}
+
+export async function fetchUploadStatus(
+  uploadId: string,
+  sessionId: string,
+): Promise<UploadStatus> {
+  const body = await jsonOrThrow<{ data: UploadStatus }>(
+    await fetch(
+      `/api/uploads/${encodeURIComponent(uploadId)}?sessionId=${encodeURIComponent(sessionId)}`,
+    ),
+  );
+  return body.data;
+}
+
+export async function completeUpload(
+  uploadId: string,
+  sessionId: string,
+): Promise<AttachmentInfo> {
+  const body = await jsonOrThrow<{ data: AttachmentInfo }>(
+    await fetch(`/api/uploads/${encodeURIComponent(uploadId)}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    }),
+  );
+  return body.data;
+}
+
+export async function abortUpload(uploadId: string, sessionId: string): Promise<void> {
+  await jsonOrThrow(
+    await fetch(
+      `/api/uploads/${encodeURIComponent(uploadId)}?sessionId=${encodeURIComponent(sessionId)}`,
+      { method: "DELETE" },
+    ),
+  );
+}
+
+export async function deleteAttachment(
+  attachmentId: string,
+  sessionId: string,
+): Promise<void> {
+  await jsonOrThrow(
+    await fetch(
+      `/api/attachments/${encodeURIComponent(attachmentId)}?sessionId=${encodeURIComponent(sessionId)}`,
+      { method: "DELETE" },
+    ),
+  );
+}
+
+export async function listSessionAttachments(
+  sessionId: string,
+): Promise<AttachmentInfo[]> {
+  const body = await jsonOrThrow<{ data: AttachmentInfo[] }>(
+    await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/attachments`),
+  );
+  return body.data ?? [];
+}
+
+export function attachmentUrl(
+  attachmentId: string,
+  sessionId: string,
+  download = false,
+): string {
+  const url = `/api/attachments/${encodeURIComponent(attachmentId)}/content?sessionId=${encodeURIComponent(sessionId)}`;
+  return download ? `${url}&download=1` : url;
 }
 
 export async function fetchHealth(): Promise<HealthInfo> {

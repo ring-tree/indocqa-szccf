@@ -1,0 +1,14 @@
+{
+  "scenario": 1,
+  "title": "演示1-术语解释（MTBF 归一 + 额定值）",
+  "mode": "kb",
+  "question": "设备手册里的 MTBF 和维修规程里的平均无故障时间是一回事吗？额定值是多少？",
+  "mustContain": ["8000"],
+  "shouldContain": ["同一", "指标"],
+  "sourceDocContains": ["fixture_术语混写"],
+  "minSources": 1,
+  "materials": [
+    "data/corpus/fixture_术语混写_模拟维保手册.md"
+  ],
+  "expected": "MTBF 即平均无故障时间，二者为同一指标；ZX-50 机组 MTBF 额定值不低于 8000 小时。"
+}

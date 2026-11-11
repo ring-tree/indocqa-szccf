@@ -8,17 +8,33 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import AttachmentTray from "../components/AttachmentTray";
+import AttachmentUploader from "../components/AttachmentUploader";
 import Message from "../components/Message";
 import ModelPicker from "../components/ModelPicker";
+import { MAX_FILES, validateFiles } from "../lib/attachments";
 import {
+  abortUpload,
+  completeUpload,
   createSession,
+  deleteAttachment,
   fetchFolders,
   fetchModels,
   fetchSession,
+  fetchUploadStatus,
+  initUpload,
   sendChat,
+  uploadChunk,
   type ChatMode,
 } from "../lib/api";
-import type { ChatMessage, DonePayload, KBFolder, ModelProfile } from "../lib/types";
+import type {
+  AttachmentInfo,
+  ChatMessage,
+  DonePayload,
+  KBFolder,
+  ModelProfile,
+  PendingAttachment,
+} from "../lib/types";
 
 interface Props {
   activeId: string | null;
@@ -42,15 +58,22 @@ function readStoredScope(): string[] {
 
 const ERROR_HINT: Record<number, string> = {
   40001: "请求参数不合法，请检查问题或检索范围",
-  40002: "文件超过 20MB 上限",
+  40002: "文件超过 100MB 上限",
   40003: "文件格式不支持",
+  40004: "单条消息附件数量超过 10 个",
+  40005: "上传任务不存在或已过期，请重新上传",
+  40006: "上传分片不完整或大小不合法，请重试",
+  40301: "无权访问该附件或会话，请新建会话后重试",
   40401: "知识库为空，请先在文档管理页入库",
   40402: "文档或目录不存在，请刷新后重试",
   40403: "会话不存在或已过期，请新建会话",
+  40404: "附件不存在或已删除",
+  40901: "上传状态冲突，请稍后重试",
   40902: "向量库与当前嵌入后端不一致，需要重建索引",
   40903: "知识库正在被另一个进程写入，请稍后再试",
   42901: "模型限流或不可用，已尝试主备切换，请稍后重试",
   50001: "检索服务异常（嵌入或向量库），请检查服务状态",
+  50003: "附件存储异常，请重试或更换文件",
 };
 
 const STREAM_IDLE_TIMEOUT_MS = 45_000;
@@ -109,6 +132,13 @@ function ChatView({
   const scopeRef = useRef<HTMLDivElement>(null);
   const scopeTouchedRef = useRef(scopePaths.length > 0);
   const [notice, setNotice] = useState("");
+  const [pending, setPending] = useState<PendingAttachment[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+  const uploadSessionRef = useRef<string | null>(activeId);
+  const uploadSessionPromiseRef = useRef<Promise<string> | null>(null);
+  const uploadQueueRef = useRef<PendingAttachment[]>([]);
+  const activeUploadsRef = useRef(0);
+  const uploadAbortRef = useRef<Map<string, AbortController>>(new Map());
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -120,6 +150,10 @@ function ChatView({
   const typeTimerRef = useRef<number | null>(null);
   const typeSettleRef = useRef<(() => void) | null>(null);
   const hasModels = models.length > 0;
+  const readyAttachmentCount = pending.filter(
+    (item) => item.status === "ready" && item.attachment,
+  ).length;
+  const hasUnreadyAttachment = pending.some((item) => item.status !== "ready");
 
   const childrenMap = useMemo(() => {
     const map = new Map<string, KBFolder[]>();
@@ -319,6 +353,16 @@ function ChatView({
   }, [activeId]);
 
   useEffect(() => {
+    // 用户切换会话/新建会话时中止在途上传；本组件刚创建上传会话时 sessionRef 已同步，不会误清空
+    if (uploadSessionRef.current === activeId) return;
+    uploadQueueRef.current = [];
+    uploadAbortRef.current.forEach((controller) => controller.abort());
+    uploadAbortRef.current.clear();
+    setPending([]);
+    uploadSessionRef.current = activeId;
+  }, [activeId]);
+
+  useEffect(() => {
     if (!atBottom) return;
     const frame = requestAnimationFrame(() =>
       bottomRef.current?.scrollIntoView({ block: "end" }),
@@ -328,6 +372,227 @@ function ChatView({
 
   function patchLast(fn: (m: ChatMessage) => ChatMessage) {
     setMessages((ms) => ms.map((m, i) => (i === ms.length - 1 ? fn(m) : m)));
+  }
+
+  function patchPending(localId: string, patch: Partial<PendingAttachment>) {
+    setPending((items) =>
+      items.map((item) => (item.localId === localId ? { ...item, ...patch } : item)),
+    );
+  }
+
+  function newLocalId(): string {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+    return `att-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  function isAbortError(error: unknown): boolean {
+    return error instanceof Error && error.name === "AbortError";
+  }
+
+  function describeUploadError(error: unknown): string {
+    const item = error as Error & { code?: number };
+    const hint = item.code ? ERROR_HINT[item.code] : undefined;
+    return hint ? `${hint}（${item.message}）` : item.message || "上传失败";
+  }
+
+  async function ensureUploadSession(filename: string): Promise<string> {
+    if (activeId) {
+      uploadSessionRef.current = activeId;
+      return activeId;
+    }
+    if (uploadSessionPromiseRef.current) return uploadSessionPromiseRef.current;
+    const promise = createSession(filename.slice(0, 40) || "附件会话")
+      .then((session) => {
+        uploadSessionRef.current = session.id;
+        currentRef.current = session.id;
+        onActiveId(session.id);
+        onRefreshSessions();
+        return session.id;
+      })
+      .finally(() => {
+        uploadSessionPromiseRef.current = null;
+      });
+    uploadSessionPromiseRef.current = promise;
+    return promise;
+  }
+
+  async function uploadOne(item: PendingAttachment): Promise<void> {
+    const controller = new AbortController();
+    uploadAbortRef.current.set(item.localId, controller);
+    try {
+      const sid = await ensureUploadSession(item.file.name);
+      if (controller.signal.aborted) return;
+
+      let uploadId = item.uploadId;
+      let chunkSize = item.chunkSize;
+      let totalChunks = 0;
+      let received = new Set<number>();
+
+      if (uploadId) {
+        try {
+          const status = await fetchUploadStatus(uploadId, sid);
+          if (status.status === "completing") {
+            throw new Error("上次上传仍在处理中，请稍后重试");
+          }
+          chunkSize = status.chunkSize;
+          totalChunks = status.totalChunks;
+          received = new Set(status.received);
+        } catch (error) {
+          if (isAbortError(error) || controller.signal.aborted) throw error;
+          const code = (error as Error & { code?: number }).code;
+          // 只有上传任务已失效才重新初始化；网络错误保留 uploadId 以便续传
+          if (code === 40005) {
+            uploadId = undefined;
+          } else {
+            throw error;
+          }
+        }
+      }
+
+      if (!uploadId) {
+        const init = await initUpload({
+          sessionId: sid,
+          filename: item.file.name,
+          size: item.file.size,
+          mime: item.file.type || undefined,
+        });
+        uploadId = init.uploadId;
+        chunkSize = init.chunkSize;
+        totalChunks = init.totalChunks;
+        received = new Set(init.received);
+        patchPending(item.localId, { uploadId, chunkSize, progress: 0 });
+      }
+      if (!uploadId || !chunkSize || !totalChunks) throw new Error("上传初始化失败");
+      const activeUploadId = uploadId;
+      const activeChunkSize = chunkSize;
+      const activeTotalChunks = totalChunks;
+
+      const bytesOf = (index: number) =>
+        Math.max(
+          0,
+          Math.min(activeChunkSize, item.file.size - index * activeChunkSize),
+        );
+      let uploadedBefore = [...received].reduce((sum, index) => sum + bytesOf(index), 0);
+
+      for (let index = 0; index < activeTotalChunks; index += 1) {
+        if (received.has(index)) continue;
+        const start = index * activeChunkSize;
+        const end = Math.min(item.file.size, start + activeChunkSize);
+        const chunk = item.file.slice(start, end);
+        if (chunk.size === 0) continue;
+
+        let attempt = 0;
+        for (;;) {
+          try {
+            await uploadChunk(
+              activeUploadId,
+              index,
+              chunk,
+              sid,
+              (ratio) => {
+                const overall = Math.round(
+                  (100 * (uploadedBefore + ratio * chunk.size)) / item.file.size,
+                );
+                patchPending(item.localId, { progress: Math.min(99, overall) });
+              },
+              controller.signal,
+            );
+            break;
+          } catch (error) {
+            if (controller.signal.aborted || isAbortError(error)) throw error;
+            attempt += 1;
+            if (attempt >= 3) throw error;
+            await sleep(300 * attempt);
+          }
+        }
+        uploadedBefore += chunk.size;
+        patchPending(item.localId, {
+          progress: Math.min(99, Math.round((100 * uploadedBefore) / item.file.size)),
+        });
+      }
+
+      const attachment = await completeUpload(activeUploadId, sid);
+      patchPending(item.localId, {
+        status: "ready",
+        progress: 100,
+        attachment,
+        uploadId: undefined,
+      });
+    } catch (error) {
+      if (controller.signal.aborted || isAbortError(error)) return;
+      patchPending(item.localId, {
+        status: "error",
+        error: describeUploadError(error),
+      });
+    } finally {
+      uploadAbortRef.current.delete(item.localId);
+    }
+  }
+
+  function drainUploadQueue() {
+    while (activeUploadsRef.current < 2) {
+      const next = uploadQueueRef.current.shift();
+      if (!next) break;
+      activeUploadsRef.current += 1;
+      void uploadOne(next).finally(() => {
+        activeUploadsRef.current = Math.max(0, activeUploadsRef.current - 1);
+        drainUploadQueue();
+      });
+    }
+  }
+
+  function addFiles(files: File[]) {
+    if (busy) {
+      setNotice("生成回答时暂不能添加附件");
+      return;
+    }
+    const remaining = MAX_FILES - pending.length;
+    const { accepted, errors } = validateFiles(files, remaining);
+    setNotice(errors.join("；"));
+    if (accepted.length === 0) return;
+    const items: PendingAttachment[] = accepted.map((file) => ({
+      localId: newLocalId(),
+      file,
+      status: "uploading",
+      progress: 0,
+    }));
+    setPending((current) => [...current, ...items]);
+    uploadQueueRef.current.push(...items);
+    drainUploadQueue();
+  }
+
+  function retryUpload(localId: string) {
+    const item = pending.find((candidate) => candidate.localId === localId);
+    if (!item) return;
+    setNotice("");
+    const next: PendingAttachment = {
+      ...item,
+      status: "uploading",
+      progress: 0,
+      error: undefined,
+    };
+    patchPending(localId, { status: "uploading", progress: 0, error: undefined });
+    uploadQueueRef.current.push(next);
+    drainUploadQueue();
+  }
+
+  function removePending(localId: string) {
+    const item = pending.find((candidate) => candidate.localId === localId);
+    uploadQueueRef.current = uploadQueueRef.current.filter((entry) => entry.localId !== localId);
+    uploadAbortRef.current.get(localId)?.abort();
+    uploadAbortRef.current.delete(localId);
+    setPending((items) => items.filter((entry) => entry.localId !== localId));
+    const sid = uploadSessionRef.current;
+    if (!sid || !item) return;
+    if (item.attachment) {
+      void deleteAttachment(item.attachment.id, sid).catch(() => undefined);
+    } else if (item.uploadId) {
+      void abortUpload(item.uploadId, sid).catch(() => undefined);
+    }
   }
 
   function changeMode(next: ChatMode) {
@@ -401,9 +666,18 @@ function ChatView({
     });
   }
 
-  async function ask(retryText?: string) {
+  async function ask(retryText?: string, retryAttachments?: AttachmentInfo[]) {
     const text = (retryText ?? input).trim();
-    if (!text || busy) return;
+    const readyAttachments =
+      retryAttachments ??
+      pending
+        .filter((item) => item.status === "ready" && item.attachment)
+        .map((item) => item.attachment as AttachmentInfo);
+    const pendingNotReady = !retryAttachments && pending.some((item) => item.status !== "ready");
+    if ((!text && readyAttachments.length === 0) || busy || pendingNotReady) {
+      if (pendingNotReady) setNotice("请等待附件上传完成后再发送");
+      return;
+    }
     if (mode === "direct" && !hasModels) return;
     if (!retryText) setInput("");
     setNotice("");
@@ -411,7 +685,11 @@ function ChatView({
     let sid = activeId;
     if (!sid) {
       try {
-        const session = await createSession(text.slice(0, 40));
+        const title =
+          text.slice(0, 40) ||
+          readyAttachments[0]?.filename?.slice(0, 40) ||
+          "附件会话";
+        const session = await createSession(title);
         sid = session.id;
         currentRef.current = sid;
         onActiveId(sid);
@@ -420,6 +698,10 @@ function ChatView({
         setInput(text);
         return;
       }
+    }
+    if (!retryText) {
+      setPending([]);
+      uploadQueueRef.current = [];
     }
 
     const runId = ++runIdRef.current;
@@ -444,7 +726,7 @@ function ChatView({
     setAtBottom(true);
     setMessages((ms) => [
       ...ms,
-      { role: "user", content: text },
+      { role: "user", content: text, attachments: readyAttachments },
       { role: "assistant", content: "", streaming: true, trace: [] },
     ]);
 
@@ -507,6 +789,7 @@ function ChatView({
         profile,
         null,
         scopePaths.length > 0 ? scopePaths : null,
+        readyAttachments.map((item) => item.id),
       );
     } catch (e) {
       if (!alive()) return;
@@ -568,7 +851,7 @@ function ChatView({
 
   function retryLast() {
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
-    if (lastUser) void ask(lastUser.content);
+    if (lastUser) void ask(lastUser.content, lastUser.attachments);
   }
 
   function onScroll() {
@@ -764,8 +1047,32 @@ function ChatView({
         <div ref={bottomRef} />
       </section>
 
-      <footer aria-label="消息输入区" className="ui-composer px-4 py-3 sm:px-6">
+      <footer
+        aria-label="消息输入区"
+        className="ui-composer relative px-4 py-3 sm:px-6"
+        onDragOver={(event) => {
+          if (busy) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+          setDragActive(true);
+        }}
+        onDragLeave={(event) => {
+          const target = event.relatedTarget as Node | null;
+          if (!target || !event.currentTarget.contains(target)) setDragActive(false);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragActive(false);
+          if (!busy) addFiles(Array.from(event.dataTransfer.files));
+        }}
+      >
+        {dragActive && (
+          <div className="ui-drop-overlay">
+            <span>松开以上传附件</span>
+          </div>
+        )}
         <div className="ui-composer-shell p-2">
+          <AttachmentTray items={pending} onRetry={retryUpload} onRemove={removePending} />
           <label htmlFor="chat-input" className="sr-only">
             输入问题
           </label>
@@ -788,8 +1095,8 @@ function ChatView({
               mode === "direct" && !hasModels
                 ? "未配置输出模型，直接对话不可用"
                 : mode === "kb"
-                  ? "输入问题，Enter 发送，Shift+Enter 换行"
-                  : "直接与模型对话"
+                  ? "输入问题，可拖拽/添加附件，Enter 发送"
+                  : "直接与模型对话，可拖拽/添加附件"
             }
             className="ui-textarea w-full bg-transparent px-3 py-2 text-sm outline-none disabled:cursor-not-allowed"
           />
@@ -798,6 +1105,7 @@ function ChatView({
           </span>
           <div className="flex items-center justify-between gap-2 px-1">
             <div className="flex min-w-0 items-center gap-2">
+              <AttachmentUploader onFiles={addFiles} disabled={busy} />
               <ModelPicker
                 models={models}
                 profile={profile}
@@ -805,7 +1113,11 @@ function ChatView({
                 disabled={!hasModels || busy}
               />
               <span aria-hidden="true" className="ui-counter hidden sm:block">
-                {busy ? "生成中，可随时停止" : `${input.length}/2000`}
+                {busy
+                  ? "生成中，可随时停止"
+                  : pending.length > 0
+                    ? `${readyAttachmentCount}/${pending.length} 附件就绪`
+                    : `${input.length}/2000`}
               </span>
             </div>
             {busy ? (
@@ -821,7 +1133,11 @@ function ChatView({
               <button
                 type="button"
                 onClick={() => void ask()}
-                disabled={!input.trim() || (mode === "direct" && !hasModels)}
+                disabled={
+                  (!input.trim() && readyAttachmentCount === 0) ||
+                  (mode === "direct" && !hasModels) ||
+                  hasUnreadyAttachment
+                }
                 aria-label="发送消息"
                 className="ui-btn ui-btn-primary"
               >

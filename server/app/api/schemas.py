@@ -1,6 +1,6 @@
 """API 数据模型（与 docs/openapi.yaml 保持一致，契约测试校验）。"""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class KBStats(BaseModel):
@@ -30,7 +30,7 @@ class HealthResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     session_id: str | None = Field(default=None, alias="sessionId", max_length=64)
-    message: str = Field(min_length=1, max_length=2000)
+    message: str = Field(default="", max_length=2000)
     mode: str = Field(pattern="^(direct|kb)$")
     top_k: int | None = Field(default=None, ge=1, le=20, alias="topK")
     # auto / primary / backup；不传等同 auto
@@ -38,7 +38,15 @@ class ChatRequest(BaseModel):
     # 知识库目录检索范围（空=全库）；folders 支持多选目录
     folder: str | None = Field(default=None, max_length=200)
     folders: list[str] | None = Field(default=None, max_length=20)
+    # 会话级附件：先上传拿到 id，再随消息发送
+    attachment_ids: list[str] | None = Field(default=None, alias="attachmentIds", max_length=10)
     # 输出格式：text=纯文本（默认）；json=结构化 JSON
     response_format: str = Field(default="text", pattern="^(text|json)$", alias="responseFormat")
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def _require_message_or_attachment(self):
+        if not self.message.strip() and not self.attachment_ids:
+            raise ValueError("message 与 attachmentIds 至少提供一个")
+        return self

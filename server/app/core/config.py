@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     @field_validator(
         "chroma_dir",
         "upload_dir",
+        "attachment_dir",
         "corpus_dir",
         "terms_file",
         "embed_cache_dir",
@@ -72,6 +73,20 @@ class Settings(BaseSettings):
     chroma_dir: str = "data/chroma"
     corpus_dir: str = "../data/corpus"
     upload_dir: str = "data/uploads"
+    # 会话附件：与知识库上传目录分离，按 session 隔离存储
+    attachment_dir: str = "data/attachments"
+    attachment_max_bytes: int = Field(default=100 * 1024 * 1024, ge=1024 * 1024)
+    attachment_max_files: int = Field(default=10, ge=1, le=50)
+    attachment_chunk_bytes: int = Field(default=4 * 1024 * 1024, ge=256 * 1024)
+    attachment_staging_ttl_hours: int = Field(default=24, ge=1, le=720)
+    attachment_text_chars_per_file: int = Field(default=12000, ge=1000, le=200000)
+    attachment_text_chars_total: int = Field(default=30000, ge=1000, le=500000)
+    attachment_recent_limit: int = Field(default=3, ge=0, le=10)
+    attachment_max_hits: int = Field(default=8, ge=1, le=30)
+    attachment_hits_per_file: int = Field(default=2, ge=1, le=6)
+    # 视觉理解默认关闭；开启后要求当前模型支持 OpenAI 兼容 image_url content parts
+    attachment_vision: bool = False
+    attachment_vision_max_images: int = Field(default=3, ge=1, le=10)
     # 会话历史：SQLite 单文件，随 data/ 忽略；保留轮数与过期天数可按部署调整
     session_db: str = "data/db/sessions.db"
     session_history_turns: int = 6

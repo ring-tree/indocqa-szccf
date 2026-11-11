@@ -1,0 +1,14 @@
+{
+  "scenario": 2,
+  "title": "演示2-故障排查（E-05 + S-12 处置步骤）",
+  "mode": "kb",
+  "question": "空压机报错代码 E-05 应该怎么处理？请给出 S-12 的具体操作步骤。",
+  "mustContain": ["排气温度过高", "S-12"],
+  "shouldContain": ["停机", "油冷器", "温控阀"],
+  "sourceDocContains": ["fixture_术语混写"],
+  "minSources": 1,
+  "materials": [
+    "data/corpus/fixture_术语混写_模拟维保手册.md"
+  ],
+  "expected": "E-05 表示排气温度过高，处置步骤编号 S-12；S-12 步骤包含立即停机、检查油位、清理油冷器、检查温控阀、复位重启。"
+}

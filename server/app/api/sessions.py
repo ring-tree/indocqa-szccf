@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from app.attachments import storage as attachment_storage
 from app.core.config import get_settings
 from app.core.exceptions import ParamError, SessionNotFoundError
 from app.session import store as session_store
@@ -58,6 +59,9 @@ def rename_session(session_id: str, body: SessionRename) -> dict:
 @router.delete("/{session_id}")
 def delete_session(session_id: str) -> dict:
     settings = get_settings()
-    if not session_store.delete_session(settings.session_db, session_id):
+    if session_store.get_session(settings.session_db, session_id) is None:
         raise SessionNotFoundError(f"会话不存在: {session_id}")
+    # 先按附件记录清理磁盘文件，再删除会话（DB 级联会同时删掉附件行）
+    attachment_storage.delete_session_files(settings, session_id)
+    session_store.delete_session(settings.session_db, session_id)
     return {"data": True}

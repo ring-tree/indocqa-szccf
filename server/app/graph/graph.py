@@ -4,6 +4,8 @@ fixed 模式走同一张图但使用统一基线参数（不扩展、不多跳�
 实验组共享完全相同的代码路径，差异只在策略参数——基线对比实验的前提。
 """
 
+import re
+from dataclasses import replace
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -14,6 +16,10 @@ from app.retrieval import terms as terms_mod
 from app.retrieval.intents import classify
 from app.retrieval.router import plan_for
 from app.retrieval.searcher import Hit, search
+
+# 故障码/步骤码/型号：用于检索时二次加权，避免代码表块压过处置步骤块
+_REF_ID = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{1,4}[-_]?\d{1,4}(?![A-Za-z0-9])")
+_ANCHOR_BOOST = 0.05
 
 
 class GState(TypedDict, total=False):
@@ -67,6 +73,12 @@ def rewrite_node(state: GState) -> dict:
         semantic = f"{state['question']} {state['sub_query']}"
     else:
         semantic = state["question"]
+    if state["intent"] in {"fault", "procedure", "param"}:
+        # 故障码/步骤码在问题中重复一次，提高 BM25 查询词频：
+        # “E-05 → S-12”场景下代码表会压过 S-12 处置步骤块，二次加权可把步骤块拉回候选集。
+        anchors = list(dict.fromkeys(_REF_ID.findall(state["question"])))
+        if anchors:
+            query_lex = f"{query_lex} {' '.join(anchors)}"
     return {"query": semantic, "query_lex": query_lex, "expansions": expansions}
 
 
@@ -100,17 +112,45 @@ def retrieve_node(state: GState) -> dict:
     )
     if plan.get("boost_table"):
         # 分数加权而非“表格优先”：避免低相关表格仅凭类型挤掉高相关正文
-        from dataclasses import replace
-
         hits = [
             replace(h, rrf=round(h.rrf * (1.12 if h.kind == "table" else 1.0), 5)) for h in hits
         ]
         hits.sort(key=lambda h: h.rrf, reverse=True)
     hits = rerank_mod.rerank(query_lex, hits, top_k)
-    merged = {h.chunk_id: h for h in state.get("hits", [])}
-    for h in hits:
-        merged[h.chunk_id] = h
-    final = _diversify(list(merged.values()), top_k if not plan.get("multihop") else max(top_k, 6))
+    # 显式故障码/步骤码/型号锚点补查：代码表块可能压过处置步骤块，
+    # 用锚点本身再做一次关键词检索，并把命中并入候选集。
+    anchors = list(dict.fromkeys(_REF_ID.findall(state["question"])))
+    anchor_hits = []
+    if anchors and state.get("intent") in {"fault", "procedure", "param"}:
+        anchor_query = " ".join(anchors)
+        if state["intent"] == "fault":
+            anchor_query += " 处置步骤"
+        elif state["intent"] == "procedure":
+            anchor_query += " 操作步骤"
+        anchor_hits = search(
+            anchor_query,
+            top_k=4,
+            strategy="keyword",
+            folder=state.get("folder"),
+            folders=state.get("folders"),
+        )
+        # 锚点命中必须进入最终候选：RRF 分数来自独立检索，直接比较会输给主检索
+        anchor_hits = [
+            replace(hit, rrf=round(hit.rrf + _ANCHOR_BOOST, 5)) for hit in anchor_hits
+        ]
+    merged: dict[str, Hit] = {}
+    for hit in [*anchor_hits, *state.get("hits", []), *hits]:
+        current = merged.get(hit.chunk_id)
+        if current is None or hit.rrf > current.rrf:
+            merged[hit.chunk_id] = hit
+    # 故障/步骤/参数问题经常需要同一手册的多个相邻块（代码表 + 处置步骤 + 周期表），
+    # 放宽单文档席位；多跳/一般问题仍保持跨文档多样化。
+    per_doc_limit = 4 if state.get("intent") in {"fault", "procedure", "param"} else 2
+    final = _diversify(
+        list(merged.values()),
+        top_k if not plan.get("multihop") else max(top_k, 6),
+        per_doc_limit=per_doc_limit,
+    )
     return {
         "hits": final,
         "trace": state["trace"]
@@ -120,22 +160,23 @@ def retrieve_node(state: GState) -> dict:
                 "hop": state["hop"],
                 "strategy": plan["strategy"],
                 "query": query_lex,
+                "anchors": anchors,
                 "expansions": state.get("expansions", []),
                 "folder": state.get("folder") or "",
                 "folders": state.get("folders") or [],
-                "hits": len(hits),
+                "hits": len(final),
             }
         ],
     }
 
 
-def _diversify(hits: list, top_k: int) -> list:
-    """跨文档多样化：单文档最多占 2 席，避免多跳问题命中偏向单一文档。"""
+def _diversify(hits: list, top_k: int, per_doc_limit: int = 2) -> list:
+    """跨文档多样化：默认单文档最多占 2 席，避免多跳问题命中偏向单一文档。"""
     hits = sorted(hits, key=lambda h: h.rrf, reverse=True)
     out, per_doc = [], {}
     for h in hits:
         used = per_doc.get(h.doc_id, 0)
-        if used >= 2:
+        if used >= per_doc_limit:
             continue
         per_doc[h.doc_id] = used + 1
         out.append(h)

@@ -53,6 +53,55 @@ class SessionNotFoundError(AppError):
     http_status = 404
 
 
+class AttachmentLimitError(AppError):
+    """40004 单条消息附件数量超过限制。"""
+
+    code = 40004
+    http_status = 400
+
+
+class UploadNotFoundError(AppError):
+    """40005 上传会话不存在、已过期或已完成。"""
+
+    code = 40005
+    http_status = 400
+
+
+class ChunkError(AppError):
+    """40006 分片序号、大小或哈希不合法。"""
+
+    code = 40006
+    http_status = 400
+
+
+class PermissionDeniedError(AppError):
+    """40301 附件或会话无权访问。"""
+
+    code = 40301
+    http_status = 403
+
+
+class AttachmentNotFoundError(AppError):
+    """40404 附件不存在。"""
+
+    code = 40404
+    http_status = 404
+
+
+class UploadConflictError(AppError):
+    """40901 上传状态冲突（重复完成、分片写入冲突等）。"""
+
+    code = 40901
+    http_status = 409
+
+
+class AttachmentStorageError(AppError):
+    """50003 附件存储、合并或清理失败。"""
+
+    code = 50003
+    http_status = 500
+
+
 class BackendMismatchError(AppError):
     """40902 现有向量库与当前嵌入后端不一致，需重建后再入库。"""
 

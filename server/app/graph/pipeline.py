@@ -8,6 +8,9 @@ import re
 from collections.abc import AsyncIterator
 from dataclasses import replace
 
+from app.attachments import context as attachment_context
+from app.attachments import repo as attachment_repo
+from app.attachments import vision as attachment_vision
 from app.context import AssemblyRequest, ContextAssembler
 from app.context.errors import ContextError
 from app.context.persona import extract_persona_signals, load_persona, upsert_persona
@@ -27,6 +30,10 @@ _LEVEL = {"low": 0, "mid": 1, "high": 2}
 _CITED = re.compile(r"\[(\d+)\]")
 _REFER = re.compile(r"它|这个|那个|该|其|上面|刚才|前面|这两|这三")
 _NEW_TOPIC = re.compile(r"^(什么是|是什么|如何|怎么|为什么|请问|介绍|解释|定义)")
+_ATTACHMENT_REF = re.compile(
+    r"附件|文件|文档|图片|图像|截图|音频|视频|录音|上传|刚才|上面|pdf|docx|excel|ppt",
+    re.IGNORECASE,
+)
 _REFUSAL_HEAD = re.compile(
     r"^(?:现有)?资料(?:中)?(?:并)?未(?:覆盖|涉及|提及)|^无法(?:根据|回答)|^(?:很)?抱歉|^没有找到"
 )
@@ -52,8 +59,8 @@ def _refusal_head(text: str) -> bool:
 
 
 def _source_item(hit: Hit, idx: int) -> dict:
-    limit = 400 if hit.kind == "table" else 240
-    return {
+    limit = 400 if hit.kind in {"table", "attachment"} else 240
+    item = {
         "index": idx,
         "docId": hit.doc_id,
         "docName": hit.doc_name,
@@ -64,6 +71,10 @@ def _source_item(hit: Hit, idx: int) -> dict:
         "score": round(hit.sim, 4) if hit.sim is not None else None,
         "snippet": hit.text[:limit],
     }
+    if hit.attachment_id:
+        item["kind"] = "attachment"
+        item["attachmentId"] = hit.attachment_id
+    return item
 
 
 def _done(
@@ -128,14 +139,20 @@ def _sanitize_hits(hits: list[Hit], guard: safety.SafetyGuard) -> tuple[list[Hit
     return kept, dropped, redacted
 
 
-def _generation_meta(gateway: LLMGateway, settings) -> dict:
+def _generation_meta(gateway: LLMGateway, settings, json_mode: bool = False) -> dict:
     meta = dict(gateway.last_request or {})
-    meta.setdefault("temperature", settings.generation_temperature)
-    meta.setdefault("maxTokens", settings.generation_max_tokens)
-    meta.setdefault("jsonMode", False)
-    meta.setdefault("responseFormat", False)
-    meta.setdefault("temperatureConfigured", settings.generation_temperature)
-    meta.setdefault("maxTokensConfigured", settings.generation_max_tokens)
+    temperature = (
+        settings.generation_json_temperature if json_mode else settings.generation_temperature
+    )
+    max_tokens = (
+        settings.generation_json_max_tokens if json_mode else settings.generation_max_tokens
+    )
+    meta.setdefault("temperature", temperature)
+    meta.setdefault("maxTokens", max_tokens)
+    meta.setdefault("jsonMode", bool(json_mode))
+    meta.setdefault("responseFormat", bool(json_mode))
+    meta.setdefault("temperatureConfigured", temperature)
+    meta.setdefault("maxTokensConfigured", max_tokens)
     meta.setdefault("jsonTemperatureConfigured", settings.generation_json_temperature)
     meta.setdefault("jsonMaxTokensConfigured", settings.generation_json_max_tokens)
     meta["policy"] = "fixed"
@@ -275,6 +292,7 @@ async def chat_stream(
     folder: str | None = None,
     folders: list[str] | None = None,
     response_format: str = "text",
+    attachments: list[dict] | None = None,
 ) -> AsyncIterator[dict]:
     settings = settings or get_settings()
     gateway = LLMGateway(settings, profile)
@@ -283,6 +301,16 @@ async def chat_stream(
 
     session = session_store.ensure_session(settings.session_db, session_id, message)
     sid = session["id"]
+    current_attachments = [
+        item
+        for item in (attachments or [])
+        if not item.get("session_id") or item.get("session_id") == sid
+    ]
+    if not current_attachments and _ATTACHMENT_REF.search(message or ""):
+        current_attachments = attachment_repo.list_recent(
+            settings.session_db, sid, int(settings.attachment_recent_limit)
+        )
+    attachment_public = [attachment_repo.public_attachment(item) for item in current_attachments]
     rows = _sanitize_rows(_history_rows(sid, settings), guard)
     history = _history(rows)
 
@@ -325,30 +353,76 @@ async def chat_stream(
         return
 
     safe_message = input_check.text
-    session_store.append_message(settings.session_db, sid, "user", safe_message)
+    if not safe_message.strip():
+        names = "、".join(item["filename"] for item in current_attachments[:3])
+        safe_message = f"请分析附件：{names}" if current_attachments else "请分析问题"
+    session_store.append_message(
+        settings.session_db,
+        sid,
+        "user",
+        safe_message,
+        attachments=attachment_public,
+    )
     retrieval_query = _context_query(safe_message, history)
 
     if mode == "direct":
         if not gateway.configured:
             raise UpstreamError("直连模式需要配置模型网关（server/.env）")
-        parts: list[str] = []
-        try:
+        if current_attachments:
+            yield {
+                "event": "trace",
+                "data": {
+                    "stage": "attachments",
+                    "result": f"会话附件 {len(current_attachments)} 个",
+                },
+            }
+        attachment_block = attachment_context.build_prompt_block(current_attachments, settings)
+        image_parts = attachment_vision.build_parts(current_attachments, settings)
+        user_content = safe_message
+        if attachment_block:
+            user_content = f"{attachment_block}\n\n【问题】\n{safe_message}"
+        content = (
+            [{"type": "text", "text": user_content}, *image_parts]
+            if image_parts
+            else user_content
+        )
+
+        async def _direct_generate(payload) -> str:
+            chunks: list[str] = []
             async for delta in gateway.stream(
                 [
                     {"role": "system", "content": _DIRECT_SYSTEM},
                     *history,
-                    {"role": "user", "content": safe_message},
+                    {"role": "user", "content": payload},
                 ],
                 json_mode=False,
             ):
-                parts.append(delta)
+                chunks.append(delta)
+            return "".join(chunks)
+
+        try:
+            raw = await _direct_generate(content)
         except UpstreamError as e:
-            yield {"event": "error", "data": {"code": e.code, "message": e.message}}
-            return
-        markdown, safety_result = _finalize_text("".join(parts), guard)
+            if image_parts:
+                yield {
+                    "event": "trace",
+                    "data": {"stage": "vision_fallback", "result": "视觉请求失败，回退纯文本"},
+                }
+                try:
+                    raw = await _direct_generate(user_content)
+                except UpstreamError as retry_error:
+                    yield {
+                        "event": "error",
+                        "data": {"code": retry_error.code, "message": retry_error.message},
+                    }
+                    return
+            else:
+                yield {"event": "error", "data": {"code": e.code, "message": e.message}}
+                return
+        markdown, safety_result = _finalize_text(raw, guard)
         plain = formatting.to_plain_text(markdown)
         boundary = "refused" if safety_result.blocked else None
-        generation_params = _generation_meta(gateway, settings)
+        generation_params = _generation_meta(gateway, settings, structured_mode)
         if structured_mode:
             output = _structured_payload(
                 markdown,
@@ -417,13 +491,43 @@ async def chat_stream(
             },
         }
         return
+    attachment_hits = (
+        attachment_context.build_hits(current_attachments, retrieval_query, settings)
+        if current_attachments
+        else []
+    )
+    if current_attachments:
+        retrieval["trace"].append(
+            {
+                "stage": "attachments",
+                "result": (
+                    f"会话附件 {len(current_attachments)} 个，"
+                    f"生成 {len(attachment_hits)} 条上下文"
+                ),
+            }
+        )
+    if attachment_hits:
+        seen: set[str] = set()
+        merged: list[Hit] = []
+        for hit in [*attachment_hits, *retrieval["hits"]]:
+            if hit.chunk_id in seen:
+                continue
+            seen.add(hit.chunk_id)
+            merged.append(hit)
+        retrieval["hits"] = merged
+
     for step in retrieval["trace"]:
         yield {"event": "trace", "data": step}
 
     plan = retrieval["plan"]
+    if current_attachments and plan.get("skip_retrieval"):
+        plan = {**plan, "skip_retrieval": False}
+        retrieval["plan"] = plan
     hits, safety_dropped, safety_redacted = _sanitize_hits(retrieval["hits"], guard)
     retrieval["hits"] = hits
     scope = _scope(settings, folder, folders)
+    if current_attachments:
+        scope = [*scope, *[item["filename"] for item in current_attachments[:3]]]
     if safety_dropped or safety_redacted:
         step = {
             "stage": "safety",
@@ -436,7 +540,7 @@ async def chat_stream(
         raw = await _chitchat_text(safe_message, gateway, history)
         markdown, safety_result = _finalize_text(raw, guard)
         plain = formatting.to_plain_text(markdown)
-        generation_params = _generation_meta(gateway, settings)
+        generation_params = _generation_meta(gateway, settings, structured_mode)
         output = (
             _structured_payload(
                 markdown,
@@ -487,7 +591,7 @@ async def chat_stream(
 
     weak = _weak_hits(hits, settings)
 
-    if not hits or weak:
+    if (not hits or weak) and not attachment_hits:
         yield {"event": "sources", "data": {"items": []}}
         reason = "检索相似度不足，按库外问题处理" if weak else "无有效命中，按库外问题处理"
         retrieval["trace"] = retrieval["trace"] + [{"stage": "boundary", "result": reason}]
@@ -513,7 +617,7 @@ async def chat_stream(
     if context_on:
         try:
             bundle = _assemble(
-                message,
+                safe_message,
                 retrieval,
                 rows,
                 settings,
@@ -563,26 +667,52 @@ async def chat_stream(
                 "data": {"stage": "context", "result": f"组装降级：{e.code}"},
             }
 
-    async def generate(extra: str | None = None) -> str:
+    vision_parts = attachment_vision.build_parts(current_attachments, settings)
+
+    async def generate(
+        extra: str | None = None,
+        image_parts: list[dict] | None = None,
+    ) -> str:
         parts: list[str] = []
+        kwargs = {
+            "bundle": bundle if settings.context_mode == "on" else None,
+            "extra_instruction": extra,
+            "json_mode": structured_mode,
+        }
+        # 没有图片时保持原调用签名，兼容外部/测试对 stream_answer 的 monkeypatch
+        if image_parts:
+            kwargs["image_parts"] = image_parts
         async for delta in stream_answer(
             safe_message,
             answer_hits,
             gateway,
             history,
             retrieval["intent"],
-            bundle=bundle if settings.context_mode == "on" else None,
-            extra_instruction=extra,
-            json_mode=structured_mode,
+            **kwargs,
         ):
             parts.append(delta)
         return "".join(parts)
 
+    instruction = structured.JSON_INSTRUCTION if structured_mode else None
     try:
-        raw = await generate(structured.JSON_INSTRUCTION if structured_mode else None)
+        raw = await generate(instruction, image_parts=vision_parts)
     except UpstreamError as e:
-        yield {"event": "error", "data": {"code": e.code, "message": e.message}}
-        return
+        if vision_parts:
+            yield {
+                "event": "trace",
+                "data": {"stage": "vision_fallback", "result": "视觉请求失败，回退纯文本"},
+            }
+            try:
+                raw = await generate(instruction, image_parts=None)
+            except UpstreamError as retry_error:
+                yield {
+                    "event": "error",
+                    "data": {"code": retry_error.code, "message": retry_error.message},
+                }
+                return
+        else:
+            yield {"event": "error", "data": {"code": e.code, "message": e.message}}
+            return
 
     if _refusal_head(raw):
         # 命中的块与问题无关、模型整段拒答：清空引用并转通用知识回答
@@ -672,7 +802,7 @@ async def chat_stream(
         }
 
     answer_model = gateway.last_model  # 自评会再次调用网关，先记住回答实际使用的模型
-    generation_params = _generation_meta(gateway, settings)
+    generation_params = _generation_meta(gateway, settings, structured_mode)
     level, reason = await _confidence(safe_message, plain, answer_hits, gateway, settings)
     source_items = [_source_item(h, i) for i, h in enumerate(answer_hits, 1)]
     if structured_mode:
@@ -784,7 +914,7 @@ async def _boundary_reply(
     if safety_result.blocked:
         boundary, reason = "refused", "输出触发安全拦截"
     plain = formatting.to_plain_text(markdown)
-    generation_params = _generation_meta(gateway, settings)
+    generation_params = _generation_meta(gateway, settings, structured_mode)
 
     if structured_mode:
         output = _structured_payload(
@@ -885,8 +1015,14 @@ async def _confidence(
     level = _heuristic_level(hits, settings)
     reasons = []
     sims = [h.sim for h in hits if h.sim is not None]
+    attachment_count = sum(1 for h in hits if getattr(h, "kind", None) == "attachment")
     if sims:
         reasons.append(f"检索最高相似度 {max(sims):.2f}")
+    if attachment_count:
+        reasons.append(f"会话附件 {attachment_count} 条")
+        if not sims:
+            level = "mid"
+            reasons.append("依据会话附件回答")
     coverage, has_valid = _citation_coverage(answer, hits)
     reasons.append(f"引用覆盖 {coverage:.0%}")
     if not has_valid and hits:

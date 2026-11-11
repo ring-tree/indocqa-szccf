@@ -65,6 +65,7 @@ async def stream_answer(
     bundle=None,
     extra_instruction: str | None = None,
     json_mode: bool = False,
+    image_parts: list[dict] | None = None,
 ) -> AsyncIterator[str]:
     if gateway and gateway.configured:
         if bundle is not None:
@@ -81,6 +82,16 @@ async def stream_answer(
                     "content": f"【资料】\n{build_context(hits)}\n\n【问题】\n{question}",
                 },
             ]
+        if image_parts:
+            last = messages[-1]
+            content = last.get("content")
+            if isinstance(content, list):
+                last["content"] = [*content, *image_parts]
+            else:
+                last["content"] = [
+                    {"type": "text", "text": str(content or "")},
+                    *image_parts,
+                ]
         async for delta in gateway.stream(messages, json_mode=json_mode):
             yield delta
         return

@@ -51,10 +51,11 @@ FastAPI/Pydantic 的请求体校验失败返回 HTTP 422，结构为默认的 `d
 
 | 项 | 限制 |
 | --- | --- |
-| 单条提问 | 1–2000 字符 |
+| 单条提问 | 0–2000 字符；`message` 与 `attachmentIds` 至少提供一个 |
 | `topK` | 1–20 |
 | 检索目录数 | 最多 20 个 |
-| 上传文件 | 单个 ≤ 20 MB；支持 `.pdf` / `.md` / `.markdown` / `.txt` |
+| 知识库上传文件 | 单个 ≤ 20 MB；支持 `.pdf` / `.md` / `.markdown` / `.txt` |
+| 会话附件 | 单个 ≤ 100 MB；单条消息 ≤ 10 个；4 MB 分片；支持图片、PDF/DOCX/MD/TXT/CSV/XLSX/PPTX、音频、视频 |
 | 目录路径 | 单级 ≤ 40 字、层级 ≤ 6、总长 ≤ 200 字 |
 | 会话标题 | ≤ 60 字符 |
 
@@ -65,17 +66,24 @@ FastAPI/Pydantic 的请求体校验失败返回 HTTP 422，结构为默认的 `d
 | code | HTTP | 含义 | 典型处理 |
 | --- | ---: | --- | --- |
 | 40001 | 400 | 参数校验失败 | 检查请求字段、目录路径、文件格式 |
-| 40002 | 400 | 文件超过 20 MB | 压缩或拆分文档 |
-| 40003 | 400 | 文件格式不支持 | 转换为 PDF/Markdown/TXT |
-| 40401 | 404 | 知识库为空 | 先在文档管理页入库 |
+| 40002 | 400 | 文件超过限制（知识库 20 MB / 会话附件 100 MB） | 压缩或拆分文档 |
+| 40003 | 400 | 文件格式不支持，或文件内容与扩展名不符 | 转换为支持的格式 |
+| 40004 | 400 | 单条消息附件超过 10 个 | 减少附件数量 |
+| 40005 | 400 | 上传任务不存在、已过期或已完成 | 重新上传 |
+| 40006 | 400 | 分片序号、大小或文件总大小不合法 | 重新上传缺失分片 |
+| 40301 | 403 | 附件/会话无权访问 | 使用正确的 sessionId 或新建会话 |
+| 40401 | 404 | 知识库为空 | 先在文档管理页入库，或仅上传会话附件 |
 | 40402 | 404 | 文档/目录/入库任务不存在 | 刷新列表后重试 |
 | 40403 | 404 | 会话不存在或已过期 | 新建会话 |
+| 40404 | 404 | 附件不存在或已删除 | 重新上传 |
+| 40901 | 409 | 上传状态冲突（重复完成/正在合并） | 稍后重试 |
 | 40902 | 409 | 向量库与当前嵌入后端不一致 | 重建索引（见部署文档） |
 | 40903 | 409 | 知识库正被另一个进程写入 | 等待写入结束后重试 |
 | 40904 | 409 | 未配置输出层模型 | 配置 `INDOCQA_LLM_*` 后重启 |
 | 42901 | 502 | 上游模型限流/不可用/流式超时；检索超时也复用该码 | 稍后重试，或切换模型 profile |
 | 50001 | 500 | 检索服务异常（嵌入或向量库） | 检查 Ollama / 向量库状态 |
 | 50002 | 500 | 未归类的服务端错误 | 查看后端日志 |
+| 50003 | 500 | 附件存储/合并/清理失败 | 重试或更换文件 |
 
 ---
 
@@ -128,9 +136,10 @@ FastAPI/Pydantic 的请求体校验失败返回 HTTP 422，结构为默认的 `d
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `message` | string | 是 | 用户问题，1–2000 字符 |
+| `message` | string | 否 | 用户问题，0–2000 字符；与 `attachmentIds` 至少提供一个 |
 | `mode` | string | 是 | `kb` 知识库问答；`direct` 直接对话 |
 | `sessionId` | string | 否 | 会话 ID；不传则自动新建 |
+| `attachmentIds` | string[] | 否 | 会话附件 ID，最多 10 个；需先调用 `/api/uploads/*` 完成上传 |
 | `profile` | string | 否 | 模型 profile ID；`auto`/不传为按主备顺序 |
 | `topK` | int | 否 | 检索条数，1–20；不传用意图默认值 |
 | `folder` | string | 否 | 单目录检索范围 |
@@ -151,9 +160,9 @@ curl -N http://127.0.0.1:8010/api/chat \
 
 | event | data | 说明 |
 | --- | --- | --- |
-| `trace` | `{stage, ...}` | 执行链节点：`classify` / `retrieve` / `decide` / `citation_retry` / `boundary` / `safety` |
+| `trace` | `{stage, ...}` | 执行链节点：`classify` / `retrieve` / `decide` / `attachments` / `vision_fallback` / `citation_retry` / `boundary` / `safety` |
 | `context` | `{budget, used, units, citationMap, warnings, template}` | 上下文组装统计（`contextMode=shadow` 时仅观测） |
-| `sources` | `{"items":[{index,docId,docName,section,page,locator,folder,score,snippet}]}` | 引用来源 |
+| `sources` | `{"items":[{index,docId,docName,section,page,locator,folder,score,snippet,kind?,attachmentId?}]}` | 引用来源；会话附件项带 `kind="attachment"` 与 `attachmentId` |
 | `token` | `{"delta":"..."}` | 增量文本 |
 | `done` | 见下 | 完成信号 |
 | `error` | `{"code":42901,"message":"..."}` | 可重试错误；不会再有 `done` |
@@ -253,7 +262,9 @@ curl -N http://127.0.0.1:8010/api/chat \
 
 `GET /api/sessions/{id}` 在会话字段之外增加 `messages` 数组；单条消息字段：
 
-`id`、`role`、`content`、`sources`、`trace`、`confidence`、`confidenceReason`、`boundary`、`model`、`contextManifest`、`createdAt`。
+`id`、`role`、`content`、`sources`、`trace`、`confidence`、`confidenceReason`、`boundary`、`model`、`contextManifest`、`attachments`、`createdAt`。
+
+`attachments` 为用户消息的附件快照，字段包括 `id`、`sessionId`、`filename`、`mime`、`kind`、`size`、`url`、`downloadUrl`、`parseStatus`、`meta`、`textChars`。
 
 ### 5.4 重命名 / 删除
 
@@ -266,6 +277,64 @@ PATCH /api/sessions/{id}
 DELETE /api/sessions/{id}
 → { "data": true }
 ```
+
+### 5.5 会话附件上传
+
+附件是**会话级上下文**，不写入知识库。支持图片、PDF/DOCX/MD/TXT/CSV/XLSX/PPTX、音频与视频；单文件 ≤ 100 MB，单条消息 ≤ 10 个，默认 4 MB 分片。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/uploads/init` | 初始化上传；`sessionId` 为空时自动建会话并回传 |
+| PUT | `/api/uploads/{uploadId}/chunks/{index}?sessionId=...` | 上传单个分片（0-based，`application/octet-stream`，幂等可重传） |
+| GET | `/api/uploads/{uploadId}?sessionId=...` | 查询已接收分片，用于断网续传 |
+| POST | `/api/uploads/{uploadId}/complete` | 合并、magic 校验、解析并写入附件表 |
+| DELETE | `/api/uploads/{uploadId}?sessionId=...` | 中止上传并清理 staging |
+| GET | `/api/attachments/{id}/content?sessionId=...&download=0` | 读取附件内容；文档默认下载，图片/音视频/PDF 内联预览 |
+| GET | `/api/sessions/{sessionId}/attachments` | 列出会话内已完成的附件 |
+| DELETE | `/api/attachments/{id}?sessionId=...` | 删除附件及磁盘文件 |
+
+初始化请求：
+
+```json
+{ "sessionId": "可选", "filename": "手册.pdf", "size": 73400320, "mime": "application/pdf" }
+```
+
+响应：
+
+```json
+{
+  "data": {
+    "uploadId": "9f2c...",
+    "sessionId": "4c0e...",
+    "chunkSize": 4194304,
+    "totalChunks": 18,
+    "received": [],
+    "expiresAt": "2026-11-12T10:00:00"
+  }
+}
+```
+
+完成响应：
+
+```json
+{
+  "data": {
+    "id": "9f2c...",
+    "sessionId": "4c0e...",
+    "filename": "手册.pdf",
+    "mime": "application/pdf",
+    "kind": "document",
+    "size": 73400320,
+    "url": "/api/attachments/9f2c.../content?sessionId=4c0e...",
+    "downloadUrl": "/api/attachments/9f2c.../content?sessionId=4c0e...&download=1",
+    "parseStatus": "ok",
+    "meta": { "pages": 42 },
+    "textChars": 53210
+  }
+}
+```
+
+发送消息时把 `data.id` 放入 `attachmentIds`。文档文本会作为会话附件上下文参与检索与引用；图片/音视频默认提供预览与元数据，开启 `INDOCQA_ATTACHMENT_VISION` 后图片会以 `image_url` content parts 送入支持视觉的模型。
 
 ---
 

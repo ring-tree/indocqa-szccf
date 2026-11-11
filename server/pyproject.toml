@@ -24,6 +24,10 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "jieba>=0.42",
     "fastembed>=0.3",
+    "Pillow>=10.0",
+    "mutagen>=1.47",
+    "openpyxl>=3.1",
+    "python-pptx>=0.6",
 ]
 
 [project.optional-dependencies]

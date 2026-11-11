@@ -21,6 +21,7 @@ eval/results/raw/
 server/data/chroma/
 server/data/cache/
 server/data/uploads/
+server/data/attachments/
 server/data/db/
 server/data/sessions.db*
 # 模型目录：便携布局 models/<模型短名>/（真实权重）随仓库分发；

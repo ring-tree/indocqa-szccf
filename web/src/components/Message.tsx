@@ -1,4 +1,5 @@
 import { memo, useCallback, useState } from "react";
+import AttachmentList from "./AttachmentList";
 import CopyButton from "./CopyButton";
 import Markdown from "./Markdown";
 import type { ChatMessage, Source, TraceStep } from "../lib/types";
@@ -18,6 +19,8 @@ const STAGE_LABEL: Record<string, string> = {
   classify: "意图分类",
   retrieve: "检索",
   decide: "多跳决策",
+  attachments: "会话附件",
+  vision_fallback: "视觉回退",
   citation_retry: "引用补正",
   boundary: "知识边界",
 };
@@ -50,8 +53,13 @@ function Message({ message, anchor, onRetry }: Props) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="ui-message-user max-w-[85%] whitespace-pre-wrap break-words px-5 py-3 text-sm lg:max-w-[60ch]">
-          {message.content}
+        <div className="ui-message-user max-w-[85%] break-words px-5 py-3 text-sm lg:max-w-[60ch]">
+          {message.attachments && message.attachments.length > 0 && (
+            <AttachmentList attachments={message.attachments} />
+          )}
+          {message.content && (
+            <div className="whitespace-pre-wrap break-words">{message.content}</div>
+          )}
         </div>
       </div>
     );
@@ -182,10 +190,19 @@ function SourcePanel({
                 {s.index}
               </span>
               <span className="min-w-0 truncate">
-                {s.folder && <span className="ui-source-folder">{s.folder}</span>}
-                {s.docName} · {s.section}
-                {s.page != null && ` · 第${s.page}页`}
-                {s.locator && ` · ${s.locator}`}
+                {s.kind === "attachment" ? (
+                  <>
+                    <span className="ui-source-folder">会话附件</span>
+                    {s.docName}
+                  </>
+                ) : (
+                  <>
+                    {s.folder && <span className="ui-source-folder">{s.folder}</span>}
+                    {s.docName} · {s.section}
+                    {s.page != null && ` · 第${s.page}页`}
+                    {s.locator && ` · ${s.locator}`}
+                  </>
+                )}
               </span>
             </button>
             {active === s.index && s.snippet && (

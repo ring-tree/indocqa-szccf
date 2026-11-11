@@ -72,15 +72,12 @@ def test_chat_rejects_unknown_profile(client):
 
 
 def test_models_endpoint_empty_when_not_configured(tmp_path, monkeypatch):
-    for var in (
-        "INDOCQA_LLM_BASE_URL",
-        "INDOCQA_LLM_API_KEY",
-        "INDOCQA_LLM_MODEL",
-        "INDOCQA_LLM_BACKUP_BASE_URL",
-        "INDOCQA_LLM_BACKUP_API_KEY",
-        "INDOCQA_LLM_BACKUP_MODEL",
-    ):
-        monkeypatch.setenv(var, "")
+    for var in ("INDOCQA_LLM_BASE_URL", "INDOCQA_LLM_BACKUP_BASE_URL"):
+        monkeypatch.setenv(var, "http://disabled.invalid/v1")
+    for var in ("INDOCQA_LLM_API_KEY", "INDOCQA_LLM_BACKUP_API_KEY"):
+        monkeypatch.setenv(var, "x")
+    for var in ("INDOCQA_LLM_MODEL", "INDOCQA_LLM_BACKUP_MODEL"):
+        monkeypatch.setenv(var, "disabled")
     monkeypatch.setenv("INDOCQA_SESSION_DB", str(tmp_path / "sessions.db"))
     get_settings.cache_clear()
     try:

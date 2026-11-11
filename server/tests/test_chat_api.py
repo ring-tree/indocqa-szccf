@@ -82,15 +82,12 @@ def test_kb_table_question_hits_serialized_table(client):
 
 def test_direct_without_gateway_returns_42901(client, monkeypatch):
     # 环境变量覆盖 .env 中的网关配置（含备用供应商），模拟完全未配置场景
-    for var in (
-        "INDOCQA_LLM_BASE_URL",
-        "INDOCQA_LLM_API_KEY",
-        "INDOCQA_LLM_MODEL",
-        "INDOCQA_LLM_BACKUP_BASE_URL",
-        "INDOCQA_LLM_BACKUP_API_KEY",
-        "INDOCQA_LLM_BACKUP_MODEL",
-    ):
-        monkeypatch.setenv(var, "")
+    for var in ("INDOCQA_LLM_BASE_URL", "INDOCQA_LLM_BACKUP_BASE_URL"):
+        monkeypatch.setenv(var, "http://disabled.invalid/v1")
+    for var in ("INDOCQA_LLM_API_KEY", "INDOCQA_LLM_BACKUP_API_KEY"):
+        monkeypatch.setenv(var, "x")
+    for var in ("INDOCQA_LLM_MODEL", "INDOCQA_LLM_BACKUP_MODEL"):
+        monkeypatch.setenv(var, "disabled")
     get_settings.cache_clear()
     try:
         r = client.post("/api/chat", json={"message": "你好", "mode": "direct"})

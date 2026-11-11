@@ -41,6 +41,7 @@ def test_intent_classification_five_types():
     assert classify("MTBF 是什么意思").intent == "term"
     assert classify("LUB 更换的保养周期是多少小时？").intent == "param"
     assert classify("空压机报错 E-05 应该怎么处理？").intent == "fault"
+    assert classify("空压机报错代码 E-05 应该怎么处理？请给出 S-12 的具体操作步骤。").intent == "fault"
     assert classify("VPN 频繁掉线是什么原因").intent == "fault"
     assert classify("如何更换空气过滤器滤芯").intent == "procedure"
     assert classify("MTBF 和平均无故障时间是同一个指标吗").intent == "multihop"
@@ -73,6 +74,19 @@ def test_corpus_extraction_merges_into_seed(tmp_settings):
     lub = [c for c in clusters if "LUB" in c]
     assert lub, "语料抽取未并入 LUB 簇"
     assert "润滑油" in lub[0] and "机油" in lub[0]
+
+
+@pytest.mark.asyncio
+async def test_fault_query_keeps_step_chunk_from_same_document(tmp_settings):
+    from app.graph.graph import run_retrieval
+
+    result = await run_retrieval(
+        "空压机报错代码 E-05 应该怎么处理？请给出 S-12 的具体操作步骤。",
+        "adaptive",
+        tmp_settings,
+    )
+    assert result["intent"] == "fault"
+    assert any("立即停机" in hit.text for hit in result["hits"])
 
 
 def test_expansion_keeps_question_prefix(tmp_settings):

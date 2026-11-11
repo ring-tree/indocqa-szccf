@@ -1,3 +1,63 @@
+export type AttachmentKind = "image" | "document" | "audio" | "video";
+
+export interface AttachmentInfo {
+  id: string;
+  sessionId: string;
+  filename: string;
+  mime: string;
+  kind: AttachmentKind;
+  size: number;
+  url: string;
+  downloadUrl?: string;
+  parseStatus: string;
+  meta?: {
+    width?: number;
+    height?: number;
+    pages?: number;
+    duration?: number;
+    format?: string;
+    [key: string]: unknown;
+  };
+  textChars?: number;
+}
+
+export interface UploadInit {
+  uploadId: string;
+  sessionId: string;
+  chunkSize: number;
+  totalChunks: number;
+  received: number[];
+  expiresAt: string;
+}
+
+export interface UploadStatus {
+  uploadId: string;
+  status: string;
+  received: number[];
+  totalChunks: number;
+  uploadedBytes: number;
+  percent: number;
+  chunkSize: number;
+  expiresAt: string;
+}
+
+export interface UploadChunkResult {
+  received: number[];
+  uploadedBytes: number;
+  percent: number;
+}
+
+export interface PendingAttachment {
+  localId: string;
+  file: File;
+  status: "uploading" | "ready" | "error";
+  progress: number;
+  uploadId?: string;
+  chunkSize?: number;
+  attachment?: AttachmentInfo;
+  error?: string;
+}
+
 export interface Source {
   index: number;
   docId: string;
@@ -8,6 +68,8 @@ export interface Source {
   score: number | null;
   folder?: string;
   snippet?: string;
+  kind?: string;
+  attachmentId?: string;
 }
 
 export interface TraceStep {
@@ -53,6 +115,7 @@ export interface ChatMessage {
   confidenceReason?: string;
   boundary?: string | null;
   model?: string | null;
+  attachments?: AttachmentInfo[];
   streaming?: boolean;
   stopped?: boolean;
   error?: boolean;

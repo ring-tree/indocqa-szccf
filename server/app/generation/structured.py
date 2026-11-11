@@ -54,6 +54,8 @@ def _citation_items(indices: list[int], sources: list[dict]) -> list[dict]:
                 "section": item.get("section"),
                 "page": item.get("page"),
                 "locator": item.get("locator"),
+                "kind": item.get("kind"),
+                "attachmentId": item.get("attachmentId"),
                 "quote": (item.get("snippet") or "")[:240],
             }
         )

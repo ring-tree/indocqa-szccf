@@ -13,11 +13,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.attachments import router as attachments_router
 from app.api.chat import router as chat_router
 from app.api.health import router as health_router
 from app.api.kb import router as kb_router
 from app.api.models import router as models_router
 from app.api.sessions import router as sessions_router
+from app.attachments import storage as attachment_storage
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.indexing.lock import acquire_server_lock, release_server_lock
@@ -27,20 +29,29 @@ logger = logging.getLogger("indocqa")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 
+def _maintenance(settings) -> int:
+    """先清理过期会话的附件文件，再删除会话；最后回收 staging/孤儿文件。"""
+    expired = session_store.expired_session_ids(settings.session_db, settings.session_ttl_days)
+    for session_id in expired:
+        attachment_storage.delete_session_files(settings, session_id)
+    removed = session_store.cleanup(settings.session_db, settings.session_ttl_days)
+    attachment_storage.cleanup_staging(settings)
+    attachment_storage.cleanup_orphans(settings)
+    return removed
+
+
 async def _session_gc(settings) -> None:
-    """服务长期运行时每小时清理一次超过 TTL 的会话。"""
+    """服务长期运行时每小时清理一次超过 TTL 的会话与附件。"""
     while True:
         await asyncio.sleep(3600)
-        await asyncio.to_thread(
-            session_store.cleanup, settings.session_db, settings.session_ttl_days
-        )
+        await asyncio.to_thread(_maintenance, settings)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     acquire_server_lock(settings)
-    removed = session_store.cleanup(settings.session_db, settings.session_ttl_days)
+    removed = await asyncio.to_thread(_maintenance, settings)
     if removed:
         logger.info("会话清理：删除 %s 个超过 %s 天的会话", removed, settings.session_ttl_days)
     try:
@@ -64,7 +75,7 @@ async def lifespan(app: FastAPI):
         with suppress(asyncio.CancelledError):
             await task
         # 进程退出时再清一次并压缩文件，避免 WAL/空洞长期堆积
-        session_store.cleanup(settings.session_db, settings.session_ttl_days)
+        await asyncio.to_thread(_maintenance, settings)
         try:
             session_store.compact(settings.session_db)
         except sqlite3.Error as e:
@@ -77,7 +88,12 @@ def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, version=settings.version, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
+        allow_origins=[
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:5174",
+            "http://127.0.0.1:5174",
+        ],
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -85,6 +101,7 @@ def create_app() -> FastAPI:
     app.include_router(models_router)
     app.include_router(chat_router)
     app.include_router(kb_router)
+    app.include_router(attachments_router)
     app.include_router(sessions_router)
 
     @app.middleware("http")

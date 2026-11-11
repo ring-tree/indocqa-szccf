@@ -31,10 +31,44 @@ CREATE TABLE IF NOT EXISTS messages (
     boundary TEXT,
     model TEXT,
     context_manifest TEXT,
+    attachments TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
+
+CREATE TABLE IF NOT EXISTS uploads (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    chunk_size INTEGER NOT NULL,
+    total_chunks INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'uploading',
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_uploads_session ON uploads(session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS session_attachments (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    stored_name TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    text TEXT,
+    meta TEXT,
+    parse_status TEXT NOT NULL DEFAULT 'ok',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_attachments_session
+    ON session_attachments(session_id, created_at);
 """
 
 
@@ -61,6 +95,8 @@ def _connect(path: str):
             con.execute("ALTER TABLE messages ADD COLUMN model TEXT")
         if "context_manifest" not in message_columns:
             con.execute("ALTER TABLE messages ADD COLUMN context_manifest TEXT")
+        if "attachments" not in message_columns:
+            con.execute("ALTER TABLE messages ADD COLUMN attachments TEXT")
         session_columns = {row[1] for row in con.execute("PRAGMA table_info(sessions)")}
         if "task_state" not in session_columns:
             con.execute("ALTER TABLE sessions ADD COLUMN task_state TEXT")
@@ -104,6 +140,7 @@ def _message_row(row: sqlite3.Row) -> dict:
         "boundary": row["boundary"],
         "model": row["model"],
         "contextManifest": manifest,
+        "attachments": json.loads(row["attachments"]) if row["attachments"] else [],
         "createdAt": row["created_at"],
     }
 
@@ -184,6 +221,7 @@ def append_message(
     boundary: str | None = None,
     model: str | None = None,
     context_manifest: dict | None = None,
+    attachments: list | None = None,
 ) -> int:
     now = _now()
     with _connect(path) as con:
@@ -191,8 +229,8 @@ def append_message(
             """
             INSERT INTO messages(session_id, role, content, sources, trace,
                                  confidence, confidence_reason, boundary, model,
-                                 context_manifest, created_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                                 context_manifest, attachments, created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 session_id,
@@ -205,6 +243,7 @@ def append_message(
                 boundary,
                 model,
                 json.dumps(context_manifest, ensure_ascii=False) if context_manifest else None,
+                json.dumps(attachments or [], ensure_ascii=False),
                 now,
             ),
         )
@@ -254,6 +293,21 @@ def save_task_state(path: str, session_id: str, state: dict) -> None:
             "UPDATE sessions SET task_state=? WHERE id=?",
             (json.dumps(state, ensure_ascii=False), session_id),
         )
+
+
+def connect(path: str):
+    """公开的数据库连接上下文，供附件仓库复用同一套建表/迁移逻辑。"""
+    return _connect(path)
+
+
+def expired_session_ids(path: str, ttl_days: int) -> list[str]:
+    """返回超过 TTL 的会话 ID，供附件文件清理先行执行。"""
+    if ttl_days <= 0:
+        return []
+    cutoff = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - ttl_days * 86400))
+    with _connect(path) as con:
+        rows = con.execute("SELECT id FROM sessions WHERE updated_at < ?", (cutoff,)).fetchall()
+    return [row["id"] for row in rows]
 
 
 def cleanup(path: str, ttl_days: int) -> int:

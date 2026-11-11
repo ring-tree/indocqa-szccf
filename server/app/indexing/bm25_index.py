@@ -43,7 +43,7 @@ class BM25Index:
 
     def search(self, query: str, top_k: int) -> list[tuple[str, float]]:
         self._ensure()
-        if not self._ids:
+        if not self._ids or self._instance is None:
             return []
         scores = self._instance.get_scores(tokenize(query))
         ranked = sorted(zip(self._ids, scores), key=lambda x: x[1], reverse=True)[:top_k]
@@ -53,6 +53,10 @@ class BM25Index:
         if self._instance is not None:
             return
         self._ids = list(self.docs.keys())
+        if not self._ids:
+            # 空知识库：BM25Okapi 不接受空语料，保持 None 并由 search 直接返回空
+            self._instance = None
+            return
         corpus = [tokenize(self.docs[cid]) for cid in self._ids]
         corpus = [c if c else ["空"] for c in corpus]
         self._instance = BM25Okapi(corpus)

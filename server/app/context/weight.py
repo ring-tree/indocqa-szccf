@@ -172,6 +172,8 @@ def score_units(
             + weights["persona"] * _persona_fit(unit, persona)
             + weights["task"] * _task_fit(unit, task)
         )
+        if unit.layer == "evidence" and unit.meta.get("kind") == "attachment":
+            base += 0.12
         unit.meta["base_weight"] = _clamp(base)
         unit.weight = _clamp(base)
 

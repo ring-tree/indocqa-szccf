@@ -51,6 +51,7 @@ class Hit:
     table_no: str | None
     parent_text: str
     folder: str = ""
+    attachment_id: str | None = None
 
 
 def search(

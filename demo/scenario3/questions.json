@@ -1,0 +1,21 @@
+{
+  "scenario": 3,
+  "title": "演示3-过百页长文档与图表（3号产线润滑点位/保养周期）",
+  "mode": "kb",
+  "question": "附件中的3号产线润滑点位图和保养周期分别是多少？",
+  "mustContainAny": [["12", "十二"], ["500"]],
+  "sourceDocContains": ["3号产线", "产线设备维护手册", "表6-1"],
+  "requireAttachmentSource": true,
+  "minSources": 1,
+  "attachments": [
+    "demo/scenario3/产线设备维护手册_演示.pdf",
+    "demo/scenario3/图5-3_3号产线润滑点位图.png",
+    "demo/scenario3/表6-1_保养周期表.csv"
+  ],
+  "materials": [
+    "demo/scenario3/产线设备维护手册_演示.pdf（120页，含图5-3与表6-1）",
+    "demo/scenario3/图5-3_3号产线润滑点位图.png（12个点位示意）",
+    "demo/scenario3/表6-1_保养周期表.csv（3号产线：500小时/12处）"
+  ],
+  "expected": "3号产线共有12处润滑点位（图5-3），保养周期为每500运行小时一次（表6-1）。"
+}

@@ -11,7 +11,7 @@
   <img alt="Chroma" src="https://img.shields.io/badge/VectorDB-Chroma-FF6B6B">
   <img alt="Ollama" src="https://img.shields.io/badge/Embedding-Ollama%20bge--m3-000000">
   <img alt="License" src="https://img.shields.io/badge/License-MIT-green">
-  <img alt="Tests" src="https://img.shields.io/badge/Tests-139%20cases-blue">
+  <img alt="Tests" src="https://img.shields.io/badge/Tests-159%20cases-blue">
 </p>
 
 ![问答工作台](docs/assets/screenshots/chat.png)
@@ -54,6 +54,7 @@
 - **上下文组装**：精确/近重复/语义三级去重、噪声过滤、权重排序、硬 Token 预算、版本化约束模板与单元级溯源。
 - **生成层加固**：固定温度与最大长度、Markdown 感知引用审计、标准 JSON 输出、输入/输出安全过滤与 PII 脱敏。
 - **可解释回答**：逐句引用、置信度（检索分布 + 引用覆盖 + 模型自评）、知识边界标注与拒答策略。
+- **会话多模态附件**：图片/文档/音频/视频分片上传、进度与重试、文档文本解析、图片/音视频预览、会话级上下文与消息流渲染，不写入全局知识库。
 - **工程化文档管理**：上传预检、重复检测、多级目录、拖拽移动与撤销、AI 辅助分类、目录树横向滚动。
 - **多模型网关**：主/备/任意多套 profile，流式空闲超时自动切换，前端可选择实际使用模型。
 - **可复现评测**：40 题标注集、固定参数基线、上下文专项评测、全链路性能基准，一条命令生成报告与图表。
@@ -297,7 +298,7 @@ indocqa-szccf/
 
 ```bash
 # 后端测试
-cd server && uv run pytest -q          # 139 项测试（生成类用例需可用模型）
+cd server && uv run pytest -q          # 159 项测试（离线可跑）
 
 # 前端检查与构建
 cd web && npm run lint && npm run build
