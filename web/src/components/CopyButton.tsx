@@ -100,12 +100,10 @@ export default function CopyButton({ content, plainText }: { content: string; pl
       {open && (
         <div className="ui-copy-menu" role="menu" aria-label="复制格式">
           <button type="button" role="menuitem" onClick={() => copy("markdown")}>
-            <span className="ui-copy-menu-title">Markdown 原文</span>
-            <span className="ui-copy-menu-hint">保留标题、列表、表格与公式</span>
+            复制为 Markdown
           </button>
           <button type="button" role="menuitem" onClick={() => copy("plain")}>
-            <span className="ui-copy-menu-title">纯文本 TXT</span>
-            <span className="ui-copy-menu-hint">去除格式标记，保留正文与引用编号</span>
+            复制为 TXT
           </button>
         </div>
       )}

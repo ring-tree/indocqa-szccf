@@ -1449,59 +1449,61 @@ function DocsView({ className = "", onChanged }: Props) {
             >
               全部文档
             </button>
-            <ul className="mt-1 space-y-0.5">
-              {displayFolders.map((row) => {
-                const canExpand = row.expandable;
-                const isCollapsed = collapsed.has(row.path);
-                const target = dropTarget?.path === row.path ? dropTarget : null;
-                return (
-                  <li key={row.path}>
-                    <div
-                      style={{ marginLeft: row.depth * 16 }}
-                      onDragOver={(e) => onFolderDragOver(e, row.path)}
-                      onDragLeave={() =>
-                        setDropTarget((current) => (current?.path === row.path ? null : current))
-                      }
-                      onDrop={(e) => onFolderDrop(e, row.path)}
-                      onClick={() => onFolderClick(row.path)}
-                      className={`ui-folder-row ${
-                        target ? (target.valid ? "is-drop-target" : "is-drop-invalid") : ""
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        className="ui-folder-arrow"
-                        aria-label={isCollapsed ? `展开 ${row.path}` : `折叠 ${row.path}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          toggleFolder(row.path);
-                        }}
-                      >
-                        {canExpand ? (isCollapsed ? "▸" : "▾") : ""}
-                      </button>
-                      <button
-                        type="button"
-                        className={`ui-folder-item ${activeFolder === row.path ? "is-active" : ""}`}
-                        title={
-                          canExpand
-                            ? `${row.path} · 含子目录，仅最末级目录可放文档`
-                            : `${row.path} · ${row.documentCount} 份文档 / ${row.chunkCount} 块`
+            <div className="ui-folder-tree-scroll">
+              <ul className="ui-folder-tree mt-1 space-y-0.5">
+                {displayFolders.map((row) => {
+                  const canExpand = row.expandable;
+                  const isCollapsed = collapsed.has(row.path);
+                  const target = dropTarget?.path === row.path ? dropTarget : null;
+                  return (
+                    <li key={row.path}>
+                      <div
+                        style={{ marginLeft: row.depth * 16 }}
+                        onDragOver={(e) => onFolderDragOver(e, row.path)}
+                        onDragLeave={() =>
+                          setDropTarget((current) => (current?.path === row.path ? null : current))
                         }
+                        onDrop={(e) => onFolderDrop(e, row.path)}
+                        onClick={() => onFolderClick(row.path)}
+                        className={`ui-folder-row ${
+                          target ? (target.valid ? "is-drop-target" : "is-drop-invalid") : ""
+                        }`}
                       >
-                        <span className="truncate">{row.label}</span>
-                        <span className="ui-folder-count">{row.documentCount}</span>
-                      </button>
-                      {target?.valid && <span className="ui-drop-chip">移入</span>}
-                    </div>
+                        <button
+                          type="button"
+                          className="ui-folder-arrow"
+                          aria-label={isCollapsed ? `展开 ${row.path}` : `折叠 ${row.path}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleFolder(row.path);
+                          }}
+                        >
+                          {canExpand ? (isCollapsed ? "▸" : "▾") : ""}
+                        </button>
+                        <button
+                          type="button"
+                          className={`ui-folder-item ${activeFolder === row.path ? "is-active" : ""}`}
+                          title={
+                            canExpand
+                              ? `${row.path} · 含子目录，仅最末级目录可放文档`
+                              : `${row.path} · ${row.documentCount} 份文档 / ${row.chunkCount} 块`
+                          }
+                        >
+                          <span className="ui-folder-name">{row.label}</span>
+                          <span className="ui-folder-count">{row.documentCount}</span>
+                        </button>
+                        {target?.valid && <span className="ui-drop-chip">移入</span>}
+                      </div>
+                    </li>
+                  );
+                })}
+                {displayFolders.length === 0 && (
+                  <li className="px-2 py-3 text-xs text-[var(--muted)]">
+                    {treeQuery ? "没有匹配的目录" : "还没有目录，上传文档后自动创建"}
                   </li>
-                );
-              })}
-              {displayFolders.length === 0 && (
-                <li className="px-2 py-3 text-xs text-[var(--muted)]">
-                  {treeQuery ? "没有匹配的目录" : "还没有目录，上传文档后自动创建"}
-                </li>
-              )}
-            </ul>
+                )}
+              </ul>
+            </div>
             {activeFolder && (
               <div className="mt-3 flex gap-2 border-t border-[var(--line)] pt-3">
                 <button type="button" onClick={openRenameFolder} className="ui-btn ui-btn-sm ui-btn-ghost">

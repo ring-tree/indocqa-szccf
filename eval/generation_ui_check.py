@@ -152,7 +152,7 @@ async def main() -> None:
         await evaluate("document.querySelector('.ui-copy-btn').click()")
         await asyncio.sleep(0.2)
         await evaluate(
-            "[...document.querySelectorAll('.ui-copy-menu button')].find(b => b.textContent.includes('Markdown 原文')).click()"
+            "[...document.querySelectorAll('.ui-copy-menu button')].find(b => b.textContent.includes('复制为 Markdown')).click()"
         )
         assert await wait_for(
             "document.querySelector('.ui-copy-toast')?.textContent.includes('已复制 Markdown')", 5
@@ -165,7 +165,7 @@ async def main() -> None:
         await evaluate("document.querySelector('.ui-copy-btn').click()")
         await asyncio.sleep(0.2)
         await evaluate(
-            "[...document.querySelectorAll('.ui-copy-menu button')].find(b => b.textContent.includes('纯文本 TXT')).click()"
+            "[...document.querySelectorAll('.ui-copy-menu button')].find(b => b.textContent.includes('复制为 TXT')).click()"
         )
         assert await wait_for(
             "document.querySelector('.ui-copy-toast')?.textContent.includes('已复制纯文本')", 5

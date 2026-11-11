@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     llm_backup_base_url: str = ""
     llm_backup_api_key: str = ""
     llm_backup_model: str = ""
+    # 模型流式空闲超时：连接建立后长时间没有新数据则中止，避免请求无限挂起
+    llm_stream_idle_timeout: float = Field(default=30.0, ge=3.0, le=120.0)
+    # 检索阶段整体超时（含嵌入服务），超时后返回可重试错误而不是继续阻塞
+    retrieval_timeout: float = Field(default=45.0, ge=5.0, le=180.0)
     # 任意多套额外模型：INDOCQA_LLM_PROFILE_<N>_{BASE_URL,API_KEY,MODEL,NAME}
     # 由 model_validator 从 .env / 环境变量聚合，不需要为每套声明字段
     llm_profiles: list[dict] = Field(default_factory=list, repr=False, exclude=True)

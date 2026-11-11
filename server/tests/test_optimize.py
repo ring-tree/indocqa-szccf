@@ -1,7 +1,9 @@
 """优化项阶段测试：表号定位（O2）、后端校验（O3）、预检（O10）、引用补正（O4）、噪声簇（O7）。"""
 
+import asyncio
 import pathlib
 import shutil
+import time
 
 import pytest
 
@@ -144,3 +146,37 @@ def test_llm_error_codes_registered():
 
     err = BackendMismatchError("x")
     assert isinstance(err, AppError) and err.code == 40902
+
+
+def test_context_query_does_not_merge_explicit_new_topic():
+    from app.graph.pipeline import _context_query
+
+    history = [
+        {"role": "user", "content": "MTBF 和平均无故障时间有什么区别？"},
+        {"role": "assistant", "content": "两者是同一指标。"},
+    ]
+    assert _context_query("什么是质能方程", history) == "什么是质能方程"
+    assert _context_query("它的额定值是多少", history).startswith("MTBF")
+
+
+@pytest.mark.asyncio
+async def test_retrieval_timeout_returns_error(tmp_settings, monkeypatch):
+    from app.graph import pipeline
+
+    async def slow_retrieval(*args, **kwargs):
+        await asyncio.sleep(2)
+        return {}
+
+    monkeypatch.setattr(pipeline, "run_retrieval", slow_retrieval)
+    settings = tmp_settings.model_copy(update={"retrieval_timeout": 0.1})
+    started = time.perf_counter()
+    events = [
+        event
+        async for event in pipeline.chat_stream("LUB 周期", "kb", settings=settings)
+    ]
+    elapsed = time.perf_counter() - started
+    assert elapsed < 1.5
+    assert any(
+        event["event"] == "error" and event["data"]["code"] == 42901
+        for event in events
+    )

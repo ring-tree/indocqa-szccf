@@ -165,6 +165,7 @@ class LLMGateway:
                 )
             ait = resp.aiter_lines().__aiter__()
             first_line = True
+            idle_timeout = float(getattr(self.settings, "llm_stream_idle_timeout", 30.0))
             while True:
                 try:
                     if first_line:
@@ -172,7 +173,8 @@ class LLMGateway:
                         line = await asyncio.wait_for(ait.__anext__(), timeout=3.0)
                         first_line = False
                     else:
-                        line = await ait.__anext__()
+                        # 流式空闲超时：连接建立后长时间无数据时中止，避免请求无限挂起
+                        line = await asyncio.wait_for(ait.__anext__(), timeout=idle_timeout)
                 except StopAsyncIteration:
                     break
                 if not line.startswith("data:"):
@@ -241,9 +243,9 @@ class LLMGateway:
                         raise
                     errors.append(f"{provider['base']}: {e.message}")
                     continue  # 400 类参数不兼容：去掉可选参数后重试
-                except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError) as e:
+                except (TimeoutError, httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError) as e:
                     if produced:
-                        raise UpstreamError("模型流式中断", detail=str(e)) from e
+                        raise UpstreamError("模型流式响应超时或中断", detail=str(e)) from e
                     errors.append(f"{provider['base']}: {type(e).__name__} {e}")
                     break
         raise UpstreamError("模型网关不可用（主备均失败）", detail="; ".join(errors))

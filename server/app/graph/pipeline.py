@@ -26,6 +26,7 @@ from app.session import store as session_store
 _LEVEL = {"low": 0, "mid": 1, "high": 2}
 _CITED = re.compile(r"\[(\d+)\]")
 _REFER = re.compile(r"它|这个|那个|该|其|上面|刚才|前面|这两|这三")
+_NEW_TOPIC = re.compile(r"^(什么是|是什么|如何|怎么|为什么|请问|介绍|解释|定义)")
 _REFUSAL_HEAD = re.compile(
     r"^(?:现有)?资料(?:中)?(?:并)?未(?:覆盖|涉及|提及)|^无法(?:根据|回答)|^(?:很)?抱歉|^没有找到"
 )
@@ -219,9 +220,13 @@ def _assemble(
 
 
 def _context_query(message: str, history: list[dict]) -> str:
-    """短问句或含指代词时补上一轮用户问题，避免“它的额定值”这类追问丢失主语。"""
+    """短追问或含指代词时补上一轮用户问题；明确的新话题不继承上一轮主语。"""
     last_user = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
-    if last_user and last_user != message and (len(message) < 12 or _REFER.search(message)):
+    if not last_user or last_user == message:
+        return message
+    if _REFER.search(message):
+        return f"{last_user} {message}"
+    if len(message) < 12 and not _NEW_TOPIC.search(message):
         return f"{last_user} {message}"
     return message
 
@@ -390,14 +395,28 @@ async def chat_stream(
         }
         return
 
-    retrieval = await run_retrieval(
-        retrieval_query,
-        settings.retrieval_mode,
-        settings,
-        top_k,
-        folder=folder,
-        folders=folders,
-    )
+    try:
+        retrieval = await asyncio.wait_for(
+            run_retrieval(
+                retrieval_query,
+                settings.retrieval_mode,
+                settings,
+                top_k,
+                folder=folder,
+                folders=folders,
+            ),
+            timeout=float(getattr(settings, "retrieval_timeout", 45.0)),
+        )
+    except TimeoutError:
+        timeout = getattr(settings, "retrieval_timeout", 45.0)
+        yield {
+            "event": "error",
+            "data": {
+                "code": 42901,
+                "message": f"检索服务超时（{timeout:g} 秒），请稍后重试",
+            },
+        }
+        return
     for step in retrieval["trace"]:
         yield {"event": "trace", "data": step}
 

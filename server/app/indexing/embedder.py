@@ -136,7 +136,7 @@ class OllamaEmbedder(BaseEmbedder):
                 resp = httpx.post(
                     f"{self.base_url}/api/embed",
                     json={"model": self.model, "input": batch},
-                    timeout=300,
+                    timeout=60,
                 )
                 resp.raise_for_status()
             except httpx.HTTPError:

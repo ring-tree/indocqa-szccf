@@ -53,6 +53,8 @@ const ERROR_HINT: Record<number, string> = {
   50001: "检索服务异常（嵌入或向量库），请检查服务状态",
 };
 
+const STREAM_IDLE_TIMEOUT_MS = 45_000;
+
 function describeError(code: number | undefined, message: string): string {
   const hint = code ? ERROR_HINT[code] : undefined;
   return hint ? `${hint}（${message}）` : message;
@@ -114,8 +116,9 @@ function ChatView({
   const abortRef = useRef<AbortController | null>(null);
   const currentRef = useRef<string | null>(null);
   const runIdRef = useRef(0);
-  const bufferRef = useRef("");
-  const flushTimerRef = useRef<number | null>(null);
+  const typeQueueRef = useRef("");
+  const typeTimerRef = useRef<number | null>(null);
+  const typeSettleRef = useRef<(() => void) | null>(null);
   const hasModels = models.length > 0;
 
   const childrenMap = useMemo(() => {
@@ -289,11 +292,14 @@ function ChatView({
     runIdRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
-    bufferRef.current = "";
-    if (flushTimerRef.current !== null) {
-      window.clearTimeout(flushTimerRef.current);
-      flushTimerRef.current = null;
+    // 切换会话时丢弃未展示的字符，避免写入错误会话
+    if (typeTimerRef.current !== null) {
+      window.clearInterval(typeTimerRef.current);
+      typeTimerRef.current = null;
     }
+    typeQueueRef.current = "";
+    typeSettleRef.current?.();
+    typeSettleRef.current = null;
     setBusy(false);
     if (!activeId) {
       setMessages([]);
@@ -343,15 +349,56 @@ function ChatView({
     if (!hasModels && mode === "direct") setMode("kb");
   }, [hasModels, mode]);
 
-  function flushBuffer() {
-    if (flushTimerRef.current !== null) {
-      window.clearTimeout(flushTimerRef.current);
-      flushTimerRef.current = null;
+  /** 停止打字机；flush=true 时把尚未展示的字符一次性补进当前消息。 */
+  function stopTypewriter(flush: boolean) {
+    if (typeTimerRef.current !== null) {
+      window.clearInterval(typeTimerRef.current);
+      typeTimerRef.current = null;
     }
-    const text = bufferRef.current;
-    if (!text) return;
-    bufferRef.current = "";
-    patchLast((m) => ({ ...m, content: m.content + text }));
+    const text = typeQueueRef.current;
+    typeQueueRef.current = "";
+    if (flush && text) patchLast((m) => ({ ...m, content: m.content + text }));
+    const settle = typeSettleRef.current;
+    typeSettleRef.current = null;
+    settle?.();
+  }
+
+  /** 逐字展示 SSE 下发的增量；积压较多时自适应加速，避免落后于流式输出。 */
+  function startTypewriter(alive: () => boolean) {
+    if (typeTimerRef.current !== null) return;
+    typeTimerRef.current = window.setInterval(() => {
+      if (!alive()) {
+        stopTypewriter(false);
+        return;
+      }
+      const queue = typeQueueRef.current;
+      if (!queue) {
+        const timer = typeTimerRef.current;
+        if (timer !== null) window.clearInterval(timer);
+        typeTimerRef.current = null;
+        const settle = typeSettleRef.current;
+        typeSettleRef.current = null;
+        settle?.();
+        return;
+      }
+      const step =
+        queue.length > 60
+          ? Math.min(16, Math.ceil(queue.length / 24))
+          : queue.length > 16
+            ? 2
+            : 1;
+      const chunk = queue.slice(0, step);
+      typeQueueRef.current = queue.slice(step);
+      patchLast((m) => ({ ...m, content: m.content + chunk }));
+    }, 24);
+  }
+
+  /** 等待队列中剩余字符展示完毕，保证 done 后动画完整收尾。 */
+  function waitTypewriter(): Promise<void> {
+    if (!typeQueueRef.current && typeTimerRef.current === null) return Promise.resolve();
+    return new Promise((resolve) => {
+      typeSettleRef.current = resolve;
+    });
   }
 
   async function ask(retryText?: string) {
@@ -376,14 +423,23 @@ function ChatView({
     }
 
     const runId = ++runIdRef.current;
-    bufferRef.current = "";
-    if (flushTimerRef.current !== null) {
-      window.clearTimeout(flushTimerRef.current);
-      flushTimerRef.current = null;
-    }
+    stopTypewriter(false);
     const alive = () => runId === runIdRef.current;
     const controller = new AbortController();
     abortRef.current = controller;
+    let lastActivity = Date.now();
+    let watchdogTriggered = false;
+    let doneReceived = false;
+    let failed = false;
+    const touch = () => {
+      lastActivity = Date.now();
+    };
+    const watchdog = window.setInterval(() => {
+      if (Date.now() - lastActivity > STREAM_IDLE_TIMEOUT_MS) {
+        watchdogTriggered = true;
+        controller.abort();
+      }
+    }, 5000);
     setBusy(true);
     setAtBottom(true);
     setMessages((ms) => [
@@ -400,26 +456,25 @@ function ChatView({
         {
           onSources: (items) => {
             if (!alive()) return;
+            touch();
             patchLast((m) => ({ ...m, sources: items }));
           },
           onToken: (delta) => {
             if (!alive()) return;
-            // 40ms 批量刷入，避免每个 token 都触发整段 Markdown 重解析
-            bufferRef.current += delta;
-            if (flushTimerRef.current === null) {
-              flushTimerRef.current = window.setTimeout(() => {
-                flushTimerRef.current = null;
-                flushBuffer();
-              }, 40);
-            }
+            touch();
+            // 进入打字机队列逐字展示；Markdown 重解析频率由展示节奏控制
+            typeQueueRef.current += delta;
+            startTypewriter(alive);
           },
           onTrace: (step) => {
             if (!alive()) return;
+            touch();
             patchLast((m) => ({ ...m, trace: [...(m.trace ?? []), step] }));
           },
           onDone: (done: DonePayload) => {
             if (!alive()) return;
-            flushBuffer();
+            touch();
+            doneReceived = true;
             patchLast((m) => ({
               ...m,
               id: done.messageId ?? undefined,
@@ -436,7 +491,8 @@ function ChatView({
           },
           onError: (message, code) => {
             if (!alive()) return;
-            flushBuffer();
+            failed = true;
+            stopTypewriter(true);
             patchLast((m) => ({
               ...m,
               error: true,
@@ -454,15 +510,24 @@ function ChatView({
       );
     } catch (e) {
       if (!alive()) return;
+      failed = true;
       if (controller.signal.aborted) {
-        flushBuffer();
-        patchLast((m) => ({
-          ...m,
-          stopped: true,
-          content: m.content || "已停止生成。",
-        }));
+        stopTypewriter(true);
+        patchLast((m) =>
+          watchdogTriggered
+            ? {
+                ...m,
+                error: true,
+                content: `${m.content}${m.content ? "\n" : ""}[响应超时] 超过 45 秒未收到新数据，请重试。`,
+              }
+            : {
+                ...m,
+                stopped: true,
+                content: m.content || "已停止生成。",
+              },
+        );
       } else {
-        flushBuffer();
+        stopTypewriter(true);
         patchLast((m) => ({
           ...m,
           error: true,
@@ -472,8 +537,17 @@ function ChatView({
         }));
       }
     } finally {
+      window.clearInterval(watchdog);
+      // 等待打字机把 done 前收到的内容逐字展示完，再收尾
+      await waitTypewriter();
       if (alive()) {
-        flushBuffer();
+        if (!doneReceived && !failed) {
+          patchLast((m) => ({
+            ...m,
+            error: true,
+            content: `${m.content}${m.content ? "\n" : ""}[连接中断] 服务端未返回完成信号，请重试。`,
+          }));
+        }
         patchLast((m) => ({ ...m, streaming: false }));
         setBusy(false);
         abortRef.current = null;
@@ -483,7 +557,7 @@ function ChatView({
   }
 
   function stop() {
-    flushBuffer();
+    stopTypewriter(true);
     runIdRef.current += 1; // 让迟到的 token 失效
     abortRef.current?.abort();
     abortRef.current = null;
